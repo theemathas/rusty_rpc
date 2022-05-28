@@ -1,0 +1,3 @@
+[workspace]
+
+members = ["rusty_rpc", "rusty_rpc_demo"]

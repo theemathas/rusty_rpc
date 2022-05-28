@@ -1,0 +1,13 @@
+struct Foo {
+    x: i32,
+    y: Bar,
+}
+
+struct Bar {
+    z: i32,
+}
+
+service MyService {
+    foo: &self -> i32;
+    bar: &self, arg1: i32, arg2: Foo -> Foo ;
+}
