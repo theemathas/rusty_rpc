@@ -1,3 +1,3 @@
 [workspace]
 
-members = ["rusty_rpc", "rusty_rpc_demo"]
+members = ["rusty_rpc_macro", "rusty_rpc_demo"]

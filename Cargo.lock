@@ -311,16 +311,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rusty_rpc"
-version = "0.1.0"
-dependencies = [
- "nom",
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "rusty_rpc_demo"
 version = "0.1.0"
 dependencies = [
@@ -329,6 +319,16 @@ dependencies = [
  "tokio",
  "tokio-serde",
  "tokio-util",
+]
+
+[[package]]
+name = "rusty_rpc_macro"
+version = "0.1.0"
+dependencies = [
+ "nom",
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

@@ -1,6 +1,6 @@
-use rusty_rpc::interface_file;
+use rusty_rpc_macro::interface_file;
 
-interface_file!("rusty_rpc/tests/simple_interface_file.interface");
+interface_file!("rusty_rpc_macro/tests/simple_interface_file.interface");
 
 #[test]
 fn test_types() {
