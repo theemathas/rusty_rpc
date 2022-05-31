@@ -17,6 +17,7 @@ struct-field := identifier ":" type ","
 
 service-definition := "service" identifier "{" service-method * "}"
 // TODO do I allow service-type arguments?
+// TODO do I allow self arguments? (as opposed to &self or &mut self)
 service-method := identifier ":" ( "&" "self" | "&" "mut" "self" ) ( "," identifier ":" type )* "->" type ";"
 
 type := "i32" | "&" service-type | "&mut" service-type | non-service-type
