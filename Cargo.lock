@@ -322,6 +322,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "rusty_rpc_lib"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "futures",
+ "simple-error",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
 name = "rusty_rpc_macro"
 version = "0.1.0"
 dependencies = [
@@ -373,6 +384,12 @@ dependencies = [
  "ryu",
  "serde",
 ]
+
+[[package]]
+name = "simple-error"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cc47a29ce97772ca5c927f75bac34866b16d64e07f330c3248e2d7226623901b"
 
 [[package]]
 name = "slab"
