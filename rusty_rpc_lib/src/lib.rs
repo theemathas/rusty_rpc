@@ -1,5 +1,7 @@
 pub mod internal_for_macro;
 
+pub use messages::{ServerResponse, ServerResult};
+
 mod messages;
 mod service_collection;
 mod traits;
@@ -66,7 +68,7 @@ async fn handle_connection<T: RustyRpcService + Default, RW: AsyncRead + AsyncWr
             let mut service_guard = service_arc
                 .try_lock()
                 .expect("Service somehow in use while trying to call a method on it.");
-            service_guard.call_method(method_and_args, service_collection)?
+            service_guard.parse_and_call_method_locally(method_and_args, service_collection)?
         };
 
         let bytes_to_send: BytesMut = message_to_send.into();

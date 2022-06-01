@@ -3,6 +3,8 @@
 //!
 //! Contains various exports that macros need access to.
 
-pub use crate::messages::{MethodAndArgs, ServerMessage};
+pub use crate::messages::{
+    response_from_service_id, MethodAndArgs, ServerMessage, ServerResponse, ServerResult,
+};
 pub use crate::service_collection::ServiceCollection;
 pub use crate::traits::{RustyRpcService, RustyRpcStruct};

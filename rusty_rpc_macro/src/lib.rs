@@ -4,11 +4,10 @@ mod parser;
 use std::{env::current_dir, fs};
 
 use proc_macro2::{Span, TokenStream};
-use quote::{quote, ToTokens};
+use quote::quote;
+use syn::parse::Parser;
 use syn::{
-    parse::{self, Parser},
-    parse_macro_input, parse_quote, Field, FnArg, ItemImpl, ItemStruct, ItemTrait, LitStr,
-    TraitItemMethod,
+    parse, parse_macro_input, parse_quote, Field, FnArg, ItemImpl, ItemStruct, ItemTrait, LitStr,
 };
 
 use interface::{Identifier, Service, Struct, Type};
@@ -74,10 +73,9 @@ pub fn interface_file(input: proc_macro::TokenStream) -> proc_macro::TokenStream
 /// ```
 #[proc_macro_attribute]
 pub fn service_impl(
-    args: proc_macro::TokenStream,
+    _args: proc_macro::TokenStream,
     input: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    eprintln!("{:?}", args);
     let original_input = TokenStream::from(input.clone());
     let input = parse_macro_input!(input as ItemImpl);
 
@@ -94,12 +92,12 @@ pub fn service_impl(
         #original_input
 
         impl #internal::RustyRpcService for #service_type_name {
-            fn call_method(
+            fn parse_and_call_method_locally(
                 &mut self,
                 method_and_args: #internal::MethodAndArgs,
                 connection: &mut #internal::ServiceCollection,
             ) -> ::std::io::Result<#internal::ServerMessage> {
-                <#service_type_name as #service_trait_name>::_rusty_rpc_forward_call_method(
+                <#service_type_name as #service_trait_name>::_rusty_rpc_forward__parse_and_call_method_locally(
                     self,
                     method_and_args,
                     connection
@@ -146,14 +144,34 @@ fn code_for_struct(struct_name: &Identifier, struct_: &Struct) -> TokenStream {
 }
 
 fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream {
+    let internal = quote! { ::rusty_rpc_lib::internal_for_macro };
     let service_name = to_syn_ident(service_name);
 
-    let internal = quote! { ::rusty_rpc_lib::internal_for_macro };
+    let method_headers: Vec<TokenStream> = service.methods.iter().map(|(method_name, method_type)| {
+        let method_name = to_syn_ident(method_name);
+        let non_self_params: Vec<FnArg> = method_type
+            .non_self_params
+            .iter()
+            .map(|(param_name, param_type)| {
+                let param_name = to_syn_ident(param_name);
+                let param_type = type_to_token_stream(param_type);
+                let temp: FnArg = parse_quote! { #param_name: #param_type };
+                temp
+            })
+            .collect();
+        let return_type = type_to_token_stream(&method_type.return_type);
+
+        // Without the semicolon or {}
+        quote! {
+            fn #method_name(&self, #(#non_self_params),*) -> #internal::ServerResult<(#return_type)>
+        }
+    }).collect();
+
     let mut service_trait: ItemTrait = parse_quote! {
-        pub trait #service_name: #internal::RustyRpcService {
+        pub trait #service_name {
             /// This method should be automatically implemented by using the `#[service_impl]` macro
             #[doc(hidden)]
-            fn _rusty_rpc_forward_call_method(
+            fn _rusty_rpc_forward__parse_and_call_method_locally(
                 &mut self,
                 method_and_args: #internal::MethodAndArgs,
                 connection: &mut #internal::ServiceCollection,
@@ -162,31 +180,32 @@ fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream
             }
         }
     };
-
     // Add methods corresponding to the protocol file.
     service_trait
         .items
-        .extend(service.methods.iter().map(|(method_name, method_type)| {
-            let method_name = to_syn_ident(method_name);
-            let non_self_params: Vec<FnArg> = method_type
-                .non_self_params
-                .iter()
-                .map(|(param_name, param_type)| {
-                    let param_name = to_syn_ident(param_name);
-                    let param_type = type_to_token_stream(param_type);
-                    let temp: FnArg = parse_quote! { #param_name: #param_type };
-                    temp
-                })
-                .collect();
-            let return_type = type_to_token_stream(&method_type.return_type);
-
-            let method: TraitItemMethod = parse_quote! {
-                fn #method_name(&self, #(#non_self_params),*) -> #return_type;
-            };
-            method.into()
+        .extend(method_headers.iter().map(|header| {
+            parse_quote! {
+                #header ;
+            }
         }));
 
-    service_trait.to_token_stream()
+    let mut server_response_impl: ItemImpl = parse_quote! {
+        impl #service_name for #internal::ServerResponse<&dyn #service_name> {}
+    };
+    server_response_impl
+        .items
+        .extend(method_headers.iter().map(|header| {
+            parse_quote! {
+                #header {
+                    todo!()  // Serialize arguments and send to server
+                }
+            }
+        }));
+
+    quote! {
+        #service_trait
+        #server_response_impl
+    }
 }
 
 fn to_syn_ident(ident: &Identifier) -> syn::Ident {
