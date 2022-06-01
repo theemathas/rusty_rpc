@@ -28,9 +28,22 @@ fn test_types() {
         // Test that types have the right traits.
         fn need_rpc_struct(_: impl rusty_rpc_lib::internal_for_macro::RustyRpcStruct) {}
         need_rpc_struct(foo.clone());
-        fn need_rpc_service(_: impl rusty_rpc_lib::internal_for_macro::RustyRpcServiceServer) {}
-        need_rpc_service(service);
+
+        fn need_rpc_service_server(
+            _: impl rusty_rpc_lib::internal_for_macro::RustyRpcServiceServer,
+        ) {
+        }
+        need_rpc_service_server(service);
+
         fn need_my_service(_: impl MyService) {}
         need_my_service(unimplemented!() as ServerResponse<&dyn MyService>);
+
+        fn need_rpc_service<
+            T: rusty_rpc_lib::internal_for_macro::RustyRpcServiceClient + ?Sized,
+        >(
+            _: &T,
+        ) {
+        }
+        need_rpc_service(unimplemented!() as &dyn MyService);
     }
 }

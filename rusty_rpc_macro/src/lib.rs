@@ -205,6 +205,7 @@ fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream
     quote! {
         #service_trait
         #server_response_impl
+        impl #internal::RustyRpcServiceClient for dyn #service_name {}
     }
 }
 

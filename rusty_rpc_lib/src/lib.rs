@@ -1,6 +1,7 @@
 pub mod internal_for_macro;
 
 pub use messages::{ServerResponse, ServerResult};
+pub use traits::{RustyRpcServiceClient, RustyRpcServiceServer};
 
 mod messages;
 mod service_collection;
@@ -17,7 +18,6 @@ use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
 use messages::{ClientMessage, ServerMessage};
 use service_collection::ServiceCollection;
-use traits::RustyRpcServiceServer;
 use util::string_io_error;
 
 use crate::util::other_io_error;
@@ -82,4 +82,8 @@ async fn handle_connection<
     }
 
     Ok(())
+}
+
+pub async fn start_client<T: RustyRpcServiceClient>(_rw: impl AsyncRead + AsyncWrite) {
+    todo!()
 }

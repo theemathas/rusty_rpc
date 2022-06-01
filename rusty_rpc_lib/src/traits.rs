@@ -3,10 +3,20 @@ use std::io;
 use crate::messages::{MethodAndArgs, ServerMessage};
 use crate::ServiceCollection;
 
+/// For any given service trait `MyService` which came from the
+/// `interface_file!` macro in the `rusty_rpc_macro` crate, the type `dyn
+/// MyService` (unsized naked dyn trait) implements `RustyRpcService`.
+///
+/// For some reason the Send + Sync + 'static bound is needed for
+/// `tokio::spawn`.
+pub trait RustyRpcServiceClient {}
+
 /// This trait will be automatically implemented by any user type marked with
 /// the `#[service_server_impl]` attribute in the `rusty_rpc_macro` crate. Users
-/// should not manually implement this trait. Client-side access to services
-/// (via [crate::messages::ServerResult]) does not have this trait.
+/// should not manually implement this trait.
+///
+/// Client-side access to services (via [crate::messages::ServerResult]) does
+/// NOT have this trait.
 ///
 /// For some reason the Send + Sync + 'static bound is needed for
 /// `tokio::spawn`.
