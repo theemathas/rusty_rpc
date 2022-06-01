@@ -4,12 +4,13 @@ use crate::messages::{MethodAndArgs, ServerMessage};
 use crate::ServiceCollection;
 
 /// This trait will be automatically implemented by any user type marked with
-/// the `#[service_impl]` attribute in the `rusty_rpc_macro` crate. Users should
-/// not manually implement this trait.
+/// the `#[service_server_impl]` attribute in the `rusty_rpc_macro` crate. Users
+/// should not manually implement this trait. Client-side access to services
+/// (via [crate::messages::ServerResult]) does not have this trait.
 ///
 /// For some reason the Send + Sync + 'static bound is needed for
 /// `tokio::spawn`.
-pub trait RustyRpcService: Send + Sync + 'static {
+pub trait RustyRpcServiceServer: Send + Sync + 'static {
     #[doc(hidden)]
     fn parse_and_call_method_locally(
         &mut self,

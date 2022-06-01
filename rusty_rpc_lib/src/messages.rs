@@ -3,7 +3,7 @@ use std::io;
 use bytes::{Bytes, BytesMut};
 use simple_error::SimpleError;
 
-use crate::traits::{RustyRpcService, RustyRpcStruct};
+use crate::traits::{RustyRpcServiceServer, RustyRpcStruct};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct ServiceId(pub u64);
@@ -88,6 +88,8 @@ impl<T> Drop for ServerResponse<T> {
     }
 }
 
-pub fn response_from_service_id<T: RustyRpcService>(service_id: ServiceId) -> ServerResponse<T> {
+pub fn response_from_service_id<T: RustyRpcServiceServer>(
+    service_id: ServiceId,
+) -> ServerResponse<T> {
     ServerResponse(Some(InnerServerResponse::RemoteService(service_id)))
 }

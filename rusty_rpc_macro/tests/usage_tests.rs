@@ -1,5 +1,5 @@
 use rusty_rpc_lib::{ServerResponse, ServerResult};
-use rusty_rpc_macro::{interface_file, service_impl};
+use rusty_rpc_macro::{interface_file, service_server_impl};
 
 interface_file!("rusty_rpc_macro/tests/simple_interface_file.interface");
 
@@ -12,7 +12,7 @@ fn test_types() {
         let foo = Foo { x: 2, y: bar };
 
         struct DummyService;
-        #[service_impl]
+        #[service_server_impl]
         impl MyService for DummyService {
             fn foo(&self) -> ServerResult<i32> {
                 Ok(ServerResponse::new(123))
@@ -28,7 +28,7 @@ fn test_types() {
         // Test that types have the right traits.
         fn need_rpc_struct(_: impl rusty_rpc_lib::internal_for_macro::RustyRpcStruct) {}
         need_rpc_struct(foo.clone());
-        fn need_rpc_service(_: impl rusty_rpc_lib::internal_for_macro::RustyRpcService) {}
+        fn need_rpc_service(_: impl rusty_rpc_lib::internal_for_macro::RustyRpcServiceServer) {}
         need_rpc_service(service);
         fn need_my_service(_: impl MyService) {}
         need_my_service(unimplemented!() as ServerResponse<&dyn MyService>);

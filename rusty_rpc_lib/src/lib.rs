@@ -17,7 +17,7 @@ use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
 use messages::{ClientMessage, ServerMessage};
 use service_collection::ServiceCollection;
-use traits::RustyRpcService;
+use traits::RustyRpcServiceServer;
 use util::string_io_error;
 
 use crate::util::other_io_error;
@@ -27,7 +27,10 @@ use crate::util::other_io_error;
 /// `T` is the type of the initial service to be used as the starting point of
 /// each connection. For each connection, a new value of that type will be
 /// created using the `Default` trait.
-pub async fn start_server<T: RustyRpcService + Default>(
+///
+/// To implement [RustyRpcServiceServer], use the `#[service_server_impl]`
+/// attribute in the `rusty_rpc_macro` crate.
+pub async fn start_server<T: RustyRpcServiceServer + Default>(
     listener: TcpListener,
 ) -> std::io::Result<()> {
     loop {
@@ -40,7 +43,10 @@ pub async fn start_server<T: RustyRpcService + Default>(
     }
 }
 
-async fn handle_connection<T: RustyRpcService + Default, RW: AsyncRead + AsyncWrite + Unpin>(
+async fn handle_connection<
+    T: RustyRpcServiceServer + Default,
+    RW: AsyncRead + AsyncWrite + Unpin,
+>(
     service_collection: &mut ServiceCollection,
     read_write: RW,
 ) -> io::Result<()> {

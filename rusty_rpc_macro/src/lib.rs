@@ -66,13 +66,13 @@ pub fn interface_file(input: proc_macro::TokenStream) -> proc_macro::TokenStream
 ///
 /// struct MyServiceImpl;
 ///
-/// #[service_impl]
+/// #[service_server_impl]
 /// impl MyService for MyServiceImpl {
 ///     // ...
 /// }
 /// ```
 #[proc_macro_attribute]
-pub fn service_impl(
+pub fn service_server_impl(
     _args: proc_macro::TokenStream,
     input: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
@@ -83,7 +83,7 @@ pub fn service_impl(
     let service_trait_name = match input.trait_ {
         Some((_, x, _)) => x,
         None => my_compile_error!(
-            "#[service_impl] should only be used on service trait implementations."
+            "#[service_server_impl] should only be used on service trait implementations."
         ),
     };
 
@@ -91,7 +91,7 @@ pub fn service_impl(
     quote! {
         #original_input
 
-        impl #internal::RustyRpcService for #service_type_name {
+        impl #internal::RustyRpcServiceServer for #service_type_name {
             fn parse_and_call_method_locally(
                 &mut self,
                 method_and_args: #internal::MethodAndArgs,
@@ -169,7 +169,7 @@ fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream
 
     let mut service_trait: ItemTrait = parse_quote! {
         pub trait #service_name {
-            /// This method should be automatically implemented by using the `#[service_impl]` macro
+            /// This method should be automatically implemented by using the `#[service_server_impl]` macro
             #[doc(hidden)]
             fn _rusty_rpc_forward__parse_and_call_method_locally(
                 &mut self,

@@ -3,11 +3,11 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::{messages::ServiceId, traits::RustyRpcService};
+use crate::{messages::ServiceId, traits::RustyRpcServiceServer};
 
 /// State for one ongoing connection with one client.
 pub struct ServiceCollection {
-    active_services: HashMap<ServiceId, Arc<Mutex<Box<dyn RustyRpcService>>>>,
+    active_services: HashMap<ServiceId, Arc<Mutex<Box<dyn RustyRpcServiceServer>>>>,
     next_service_id: ServiceId,
 }
 impl ServiceCollection {
@@ -20,7 +20,7 @@ impl ServiceCollection {
 
     /// Add a service to the collection, and return its ID.
     #[must_use]
-    pub fn register_service(&mut self, service: Box<dyn RustyRpcService>) -> ServiceId {
+    pub fn register_service(&mut self, service: Box<dyn RustyRpcServiceServer>) -> ServiceId {
         // Keep trying new service IDs until it's available.
         // This would go into an infinite loop if all possible ServiceIds were
         // used, but we would run out of memory before that would ever happen.
@@ -43,7 +43,7 @@ impl ServiceCollection {
     pub(crate) fn get_service_arc(
         &self,
         service_id: ServiceId,
-    ) -> Option<Arc<Mutex<Box<dyn RustyRpcService>>>> {
+    ) -> Option<Arc<Mutex<Box<dyn RustyRpcServiceServer>>>> {
         self.active_services.get(&service_id).cloned()
     }
 }
