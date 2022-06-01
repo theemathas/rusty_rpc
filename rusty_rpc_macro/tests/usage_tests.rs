@@ -20,6 +20,9 @@ fn test_types() {
             fn bar(&self, _a: i32, _b: Foo) -> ServerResult<Foo> {
                 unimplemented!()
             }
+            fn baz(&self) -> ServerResult<&dyn MyService> {
+                unimplemented!()
+            }
         }
 
         let service = DummyService;

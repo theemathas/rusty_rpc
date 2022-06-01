@@ -13,7 +13,7 @@ pub struct RpcInterface {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Struct {
     /// Map from field names to field type.
-    pub fields: HashMap<Identifier, Type>,
+    pub fields: HashMap<Identifier, DataType>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,16 +25,21 @@ pub struct Service {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Method {
     // TODO currently only &self for now. Add &mut self.
-    pub non_self_params: Vec<(Identifier, Type)>,
-    pub return_type: Type,
+    pub non_self_params: Vec<(Identifier, DataType)>,
+    pub return_type: ReturnType,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Type {
+pub enum ReturnType {
+    // TODO maybe add ServiceMut
+    ServiceRef(Identifier),
+    Data(DataType),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum DataType {
     I32,
     Struct(Identifier),
-    // TODO Add here:
-    // Service(Identifier),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

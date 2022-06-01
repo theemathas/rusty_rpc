@@ -12,17 +12,16 @@ definition := service-definition | struct-definition
 
 // mirrors rust's struct definition
 struct-definition := "struct" identifier "{" struct-field * "}"
-// TODO: Do I allow service-type here?
 struct-field := identifier ":" type ","
 
 service-definition := "service" identifier "{" service-method * "}"
-// TODO do I allow service-type arguments?
-// TODO do I allow self arguments? (as opposed to &self or &mut self)
-service-method := identifier ":" ( "&" "self" | "&" "mut" "self" ) ( "," identifier ":" type )* "->" type ";"
+// TODO add &mut self
+service-method := identifier ":" ( "&" "self" ) ( "," identifier ":" type )* "->" type ";"
 
-type := "i32" | "&" service-type | "&mut" service-type | non-service-type
-service-type := "service" identifier
-non-service-type := identifier
+// TODO add "&mut"
+return-type := "&" service-type | data-type
+data-type := "i32" | struct-type
+struct-type := identifier
 
 identifier := A string that starts with an alphanumberic character followed by zero or more alphanumberic characters and/or underscores. Except that it must not match a reserved word.
 
@@ -49,7 +48,7 @@ use std::{
     iter::once,
 };
 
-use crate::interface::{Identifier, Method, RpcInterface, Service, Struct, Type};
+use crate::interface::{DataType, Identifier, Method, ReturnType, RpcInterface, Service, Struct};
 
 pub fn parse_interface(input: &[u8]) -> IResult<&[u8], RpcInterface> {
     enum Definition {
@@ -112,7 +111,7 @@ fn parse_struct(input: &[u8]) -> IResult<&[u8], (Identifier, Struct)> {
             tag("}"),
         )),
         |(_, _, struct_name, _, _, field_vec, _)| -> _ {
-            let mut field_map = HashMap::<Identifier, Type>::new();
+            let mut field_map = HashMap::<Identifier, DataType>::new();
             for (field_name, field_type) in field_vec {
                 match field_map.entry(field_name) {
                     Entry::Vacant(entry) => entry.insert(field_type),
@@ -128,14 +127,14 @@ fn parse_struct(input: &[u8]) -> IResult<&[u8], (Identifier, Struct)> {
     )(input)
 }
 
-fn parse_struct_field(input: &[u8]) -> IResult<&[u8], (Identifier, Type)> {
+fn parse_struct_field(input: &[u8]) -> IResult<&[u8], (Identifier, DataType)> {
     map(
         tuple((
             parse_identifier,
             multispace0,
             tag(":"),
             multispace0,
-            parse_type,
+            parse_data_type,
             multispace0,
             tag(","),
         )),
@@ -185,7 +184,7 @@ fn parse_method(input: &[u8]) -> IResult<&[u8], (Identifier, Method)> {
             multispace0,
             tag(":"),
             multispace0,
-            parse_type,
+            parse_data_type,
         )),
         |(_, _, param_name, _, _, _, param_type)| (param_name, param_type),
     );
@@ -201,7 +200,7 @@ fn parse_method(input: &[u8]) -> IResult<&[u8], (Identifier, Method)> {
             many0_padded_by_multispace(parse_parameter),
             tag("->"),
             multispace0,
-            parse_type,
+            parse_return_type,
             multispace0,
             tag(";"),
         )),
@@ -217,10 +216,24 @@ fn parse_method(input: &[u8]) -> IResult<&[u8], (Identifier, Method)> {
     )(input)
 }
 
-fn parse_type(input: &[u8]) -> IResult<&[u8], Type> {
+fn parse_return_type(input: &[u8]) -> IResult<&[u8], ReturnType> {
+    let parse_service_type = map(
+        tuple((
+            tag("&"),
+            multispace0,
+            tag("service"),
+            multispace1,
+            parse_identifier,
+        )),
+        |(_, _, _, _, x)| ReturnType::ServiceRef(x),
+    );
+    alt((parse_service_type, parse_data_type.map(ReturnType::Data)))(input)
+}
+
+fn parse_data_type(input: &[u8]) -> IResult<&[u8], DataType> {
     alt((
-        value(Type::I32, tag("i32")),
-        map(parse_identifier, Type::Struct),
+        value(DataType::I32, tag("i32")),
+        map(parse_identifier, DataType::Struct),
     ))(input)
 }
 
@@ -267,6 +280,7 @@ mod tests {
             service MyService {
                 foo : & self -> i32 ;
                 bar : & self , arg1 : i32 , arg2 : Foo -> Foo ;
+                baz : & self -> & service MyService ;
             }
         "#;
         let ident = |s: &str| Identifier(s.to_string());
@@ -276,8 +290,8 @@ mod tests {
                 foo_ident(),
                 Struct {
                     fields: HashMap::from([
-                        (ident("x"), Type::I32),
-                        (ident("y"), Type::Struct(foo_ident())),
+                        (ident("x"), DataType::I32),
+                        (ident("y"), DataType::Struct(foo_ident())),
                     ]),
                 },
             )]),
@@ -289,17 +303,24 @@ mod tests {
                             ident("foo"),
                             Method {
                                 non_self_params: vec![],
-                                return_type: Type::I32,
+                                return_type: ReturnType::Data(DataType::I32),
                             },
                         ),
                         (
                             ident("bar"),
                             Method {
                                 non_self_params: vec![
-                                    (ident("arg1"), Type::I32),
-                                    (ident("arg2"), Type::Struct(foo_ident())),
+                                    (ident("arg1"), DataType::I32),
+                                    (ident("arg2"), DataType::Struct(foo_ident())),
                                 ],
-                                return_type: Type::Struct(foo_ident()),
+                                return_type: ReturnType::Data(DataType::Struct(foo_ident())),
+                            },
+                        ),
+                        (
+                            ident("baz"),
+                            Method {
+                                non_self_params: vec![],
+                                return_type: ReturnType::ServiceRef(ident("MyService")),
                             },
                         ),
                     ]),

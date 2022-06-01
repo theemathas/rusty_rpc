@@ -10,7 +10,7 @@ use syn::{
     parse, parse_macro_input, parse_quote, Field, FnArg, ItemImpl, ItemStruct, ItemTrait, LitStr,
 };
 
-use interface::{Identifier, Service, Struct, Type};
+use interface::{DataType, Identifier, ReturnType, Service, Struct};
 
 use crate::parser::parse_interface;
 
@@ -125,7 +125,7 @@ fn code_for_struct(struct_name: &Identifier, struct_: &Struct) -> TokenStream {
         .iter()
         .map(|(field_name, field_type)| {
             let field_name = to_syn_ident(field_name);
-            let type_token_stream = type_to_token_stream(field_type);
+            let type_token_stream = data_type_to_token_stream(field_type);
             Field::parse_named
                 .parse2(quote! { pub #field_name: #type_token_stream })
                 .unwrap()
@@ -154,12 +154,12 @@ fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream
             .iter()
             .map(|(param_name, param_type)| {
                 let param_name = to_syn_ident(param_name);
-                let param_type = type_to_token_stream(param_type);
+                let param_type = data_type_to_token_stream(param_type);
                 let temp: FnArg = parse_quote! { #param_name: #param_type };
                 temp
             })
             .collect();
-        let return_type = type_to_token_stream(&method_type.return_type);
+        let return_type = return_type_to_token_stream(&method_type.return_type);
 
         // Without the semicolon or {}
         quote! {
@@ -213,12 +213,22 @@ fn to_syn_ident(ident: &Identifier) -> syn::Ident {
     syn::Ident::new(&ident.0, Span::call_site())
 }
 
-fn type_to_token_stream(type_: &Type) -> TokenStream {
+fn data_type_to_token_stream(type_: &DataType) -> TokenStream {
     match type_ {
-        interface::Type::I32 => quote! { i32 },
-        interface::Type::Struct(type_identifier) => {
+        DataType::I32 => quote! { i32 },
+        DataType::Struct(type_identifier) => {
             let temp = to_syn_ident(type_identifier);
             quote! { #temp }
         }
+    }
+}
+
+fn return_type_to_token_stream(type_: &ReturnType) -> TokenStream {
+    match type_ {
+        ReturnType::ServiceRef(x) => {
+            let temp = to_syn_ident(x);
+            quote! { &dyn #temp }
+        }
+        ReturnType::Data(x) => data_type_to_token_stream(x),
     }
 }
