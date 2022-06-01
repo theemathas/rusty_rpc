@@ -1,9 +1,9 @@
-use std::io;
+use std::ops::Deref;
 
 use bytes::{Bytes, BytesMut};
 use simple_error::SimpleError;
 
-use crate::traits::{RustyRpcServiceServer, RustyRpcStruct};
+use crate::RustyRpcServiceClient;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct ServiceId(pub u64);
@@ -42,54 +42,47 @@ pub struct MethodAndArgs {
     // TODO
 }
 
-pub type ServerResult<T> = io::Result<ServerResponse<T>>;
-
-enum InnerServerResponse<T> {
-    RemoteService(ServiceId), // TODO reference to connection somehow
-    DataOrLocalService(T),
+enum InnerServiceRef<T: RustyRpcServiceClient + ?Sized> {
+    RemoteServiceRef(T::ServiceProxy),
+    OwnedLocalService(Box<T>),
 }
 
-/// Wrapper around an RPC return value.
+/// Either an owned server-side service, or a client's reference to such a
+/// service. (If the fromer, cannot be dereferenced. If the latter, acts like
+/// `&T` and can be dereferenced.)
 ///
-/// When this wrapper is dropped on the client side, the associated resources,
-/// if any, are dropped on the server side. If the type `T` is an implementation
-/// of a certain service, then `Response<T>` will implement the corresponding
-/// service trait.
-pub struct ServerResponse<T>(
-    /// Do enum inside struct in order to get private enum variants and to make
-    /// implementing Drop easier.
-    ///
-    /// This thing is None only after being dropped.
-    Option<InnerServerResponse<T>>,
+/// When all ServiceRef's for a certain service is dropped on the client side,
+/// the associated resources, are dropped on the server side. If the type `T` is
+/// an implementation of a certain service, then `Response<T>` will implement
+/// the corresponding service trait.
+///
+/// The type `T` should be something like `dyn MyService` (bare unsized dyn
+/// trait).
+pub struct ServiceRef<T: RustyRpcServiceClient + ?Sized>(
+    /// Do enum inside struct to get private enum variants.
+    InnerServiceRef<T>,
 );
-impl<T> ServerResponse<T> {
-    /// Used on the server side to create a new Response.
-    pub fn new(inner: T) -> Self {
-        ServerResponse(Some(InnerServerResponse::DataOrLocalService(inner)))
+impl<T: RustyRpcServiceClient + ?Sized> ServiceRef<T> {
+    /// Used on the server side.
+    pub fn new(inner: Box<T>) -> Self {
+        ServiceRef(InnerServiceRef::OwnedLocalService(inner))
     }
 }
-impl<T: RustyRpcStruct> ServerResponse<T> {
-    /// Unwraps the Response.
-    pub fn into_inner(mut self) -> T {
-        match self.0.take().expect("Tried to into_inner on dropped Response") {
-            InnerServerResponse::RemoteService(_) =>
-                panic!("Somehow had a RemoteService variant on an impl RustyRpcStruct, which should not be possible."),
-            InnerServerResponse::DataOrLocalService(x) => x,
-        }
-    }
-}
-impl<T> Drop for ServerResponse<T> {
-    fn drop(&mut self) {
-        let temp = self.0.take().expect("Tried to drop Response twice");
-        match temp {
-            InnerServerResponse::RemoteService(_service_id) => todo!(),
-            InnerServerResponse::DataOrLocalService(_) => (),
+/// Used only on the client side.
+impl<T: RustyRpcServiceClient + ?Sized> Deref for ServiceRef<T> {
+    type Target = T::ServiceProxy;
+    fn deref(&self) -> &T::ServiceProxy {
+        match &self.0 {
+            InnerServiceRef::RemoteServiceRef(x) => x,
+            InnerServiceRef::OwnedLocalService(_) => {
+                panic!("Tried to dereference a ServiceRef on server side.")
+            }
         }
     }
 }
 
-pub fn response_from_service_id<T: RustyRpcServiceServer>(
-    service_id: ServiceId,
-) -> ServerResponse<T> {
-    ServerResponse(Some(InnerServerResponse::RemoteService(service_id)))
+pub fn service_ref_from_service_proxy<T: RustyRpcServiceClient + ?Sized>(
+    service_proxy: T::ServiceProxy,
+) -> ServiceRef<T> {
+    ServiceRef(InnerServiceRef::RemoteServiceRef(service_proxy))
 }

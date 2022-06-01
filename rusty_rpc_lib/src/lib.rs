@@ -1,7 +1,7 @@
 pub mod internal_for_macro;
 
-pub use messages::{ServerResponse, ServerResult};
-pub use traits::{RustyRpcServiceClient, RustyRpcServiceServer};
+pub use messages::ServiceRef;
+pub use traits::{RustyRpcServiceClient, RustyRpcServiceProxy, RustyRpcServiceServer};
 
 mod messages;
 mod service_collection;

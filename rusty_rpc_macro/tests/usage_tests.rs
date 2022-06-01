@@ -1,4 +1,6 @@
-use rusty_rpc_lib::{ServerResponse, ServerResult};
+use std::io;
+
+use rusty_rpc_lib::{RustyRpcServiceClient, ServiceRef};
 use rusty_rpc_macro::{interface_file, service_server_impl};
 
 interface_file!("rusty_rpc_macro/tests/simple_interface_file.interface");
@@ -14,19 +16,19 @@ fn test_types() {
         struct DummyService;
         #[service_server_impl]
         impl MyService for DummyService {
-            fn foo(&self) -> ServerResult<i32> {
-                Ok(ServerResponse::new(123))
+            fn foo(&self) -> io::Result<i32> {
+                Ok(123)
             }
-            fn bar(&self, _a: i32, _b: Foo) -> ServerResult<Foo> {
+            fn bar(&self, _a: i32, _b: Foo) -> io::Result<Foo> {
                 unimplemented!()
             }
-            fn baz(&self) -> ServerResult<&dyn MyService> {
-                unimplemented!()
+            fn baz(&self) -> io::Result<ServiceRef<dyn MyService>> {
+                Ok(ServiceRef::new(unimplemented!() as Box<dyn MyService>))
             }
         }
 
         let service = DummyService;
-        let _: Foo = service.bar(3, foo.clone()).unwrap().into_inner();
+        let _: Foo = service.bar(3, foo.clone()).unwrap();
 
         // Test that types have the right traits.
         fn need_rpc_struct(_: impl rusty_rpc_lib::internal_for_macro::RustyRpcStruct) {}
@@ -38,15 +40,18 @@ fn test_types() {
         }
         need_rpc_service_server(service);
 
-        fn need_my_service(_: impl MyService) {}
-        need_my_service(unimplemented!() as ServerResponse<&dyn MyService>);
+        fn need_my_service(
+            _: impl MyService + rusty_rpc_lib::internal_for_macro::RustyRpcServiceProxy<dyn MyService>,
+        ) {
+        }
+        need_my_service(unimplemented!() as <dyn MyService as RustyRpcServiceClient>::ServiceProxy);
 
-        fn need_rpc_service<
+        fn need_rpc_service_client<
             T: rusty_rpc_lib::internal_for_macro::RustyRpcServiceClient + ?Sized,
         >(
             _: &T,
         ) {
         }
-        need_rpc_service(unimplemented!() as &dyn MyService);
+        need_rpc_service_client(unimplemented!() as &dyn MyService);
     }
 }

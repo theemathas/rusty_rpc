@@ -5,18 +5,38 @@ use crate::ServiceCollection;
 
 /// For any given service trait `MyService` which came from the
 /// `interface_file!` macro in the `rusty_rpc_macro` crate, the type `dyn
-/// MyService` (unsized naked dyn trait) implements `RustyRpcService`.
+/// MyService` (unsized naked dyn trait) implements [RustyRpcServiceClient].
+///
+/// Users should not manually implement this trait.
 ///
 /// For some reason the Send + Sync + 'static bound is needed for
 /// `tokio::spawn`.
-pub trait RustyRpcServiceClient {}
+pub trait RustyRpcServiceClient {
+    /// A proxy that client uses to reference such a service. This proxy type
+    /// will implement the service trait (e.g. MyService).
+    ///
+    /// When the ServiceRef for a certain service is dropped on the client
+    /// side, the associated resources, are dropped on the server side. If the
+    /// type `T` is an implementation of a certain service, then `Response<T>`
+    /// will implement the corresponding service trait.
+    type ServiceProxy: RustyRpcServiceProxy<Self>;
+}
+
+/// Used with [RustyRpcServiceClient]. Something that implements
+/// `RustyRpcServiceProxy<dyn T>` will also always be generated so it implements
+/// `T`. This type is a proxy that deallocates server-side resources when
+/// dropped on the client side.
+#[allow(drop_bounds)]
+pub trait RustyRpcServiceProxy<T: RustyRpcServiceClient + ?Sized>: Drop {
+    // TODO Do I need anything here?
+}
 
 /// This trait will be automatically implemented by any user type marked with
 /// the `#[service_server_impl]` attribute in the `rusty_rpc_macro` crate. Users
 /// should not manually implement this trait.
 ///
-/// Client-side access to services (via [crate::messages::ServerResult]) does
-/// NOT have this trait.
+/// Client-side access to services (via [RustyRpcServiceClient::ServiceRef]) CANNOT
+/// use this trait.
 ///
 /// For some reason the Send + Sync + 'static bound is needed for
 /// `tokio::spawn`.

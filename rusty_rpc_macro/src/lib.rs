@@ -4,7 +4,7 @@ mod parser;
 use std::{env::current_dir, fs};
 
 use proc_macro2::{Span, TokenStream};
-use quote::quote;
+use quote::{format_ident, quote};
 use syn::parse::Parser;
 use syn::{
     parse, parse_macro_input, parse_quote, Field, FnArg, ItemImpl, ItemStruct, ItemTrait, LitStr,
@@ -147,25 +147,29 @@ fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream
     let internal = quote! { ::rusty_rpc_lib::internal_for_macro };
     let service_name = to_syn_ident(service_name);
 
-    let method_headers: Vec<TokenStream> = service.methods.iter().map(|(method_name, method_type)| {
-        let method_name = to_syn_ident(method_name);
-        let non_self_params: Vec<FnArg> = method_type
-            .non_self_params
-            .iter()
-            .map(|(param_name, param_type)| {
-                let param_name = to_syn_ident(param_name);
-                let param_type = data_type_to_token_stream(param_type);
-                let temp: FnArg = parse_quote! { #param_name: #param_type };
-                temp
-            })
-            .collect();
-        let return_type = return_type_to_token_stream(&method_type.return_type);
+    let method_headers: Vec<TokenStream> = service
+        .methods
+        .iter()
+        .map(|(method_name, method_type)| {
+            let method_name = to_syn_ident(method_name);
+            let non_self_params: Vec<FnArg> = method_type
+                .non_self_params
+                .iter()
+                .map(|(param_name, param_type)| {
+                    let param_name = to_syn_ident(param_name);
+                    let param_type = data_type_to_token_stream(param_type);
+                    let temp: FnArg = parse_quote! { #param_name: #param_type };
+                    temp
+                })
+                .collect();
+            let return_type = return_type_to_token_stream(&method_type.return_type);
 
-        // Without the semicolon or {}
-        quote! {
-            fn #method_name(&self, #(#non_self_params),*) -> #internal::ServerResult<(#return_type)>
-        }
-    }).collect();
+            // Without the semicolon or {}
+            quote! {
+                fn #method_name(&self, #(#non_self_params),*) -> #return_type
+            }
+        })
+        .collect();
 
     let mut service_trait: ItemTrait = parse_quote! {
         pub trait #service_name {
@@ -189,10 +193,23 @@ fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream
             }
         }));
 
-    let mut server_response_impl: ItemImpl = parse_quote! {
-        impl #service_name for #internal::ServerResponse<&dyn #service_name> {}
+    let service_proxy_name = format_ident!("{}_RustyRpcServiceProxy", service_name);
+    let service_proxy_type = quote! {
+        pub struct #service_proxy_name {
+            // TODO
+        }
+        impl #internal::RustyRpcServiceProxy<dyn #service_name> for #service_proxy_name { }
+        impl Drop for #service_proxy_name {
+            fn drop(&mut self) {
+                todo!()
+            }
+        }
     };
-    server_response_impl
+
+    let mut service_proxy_impl: ItemImpl = parse_quote! {
+        impl #service_name for #service_proxy_name { }
+    };
+    service_proxy_impl
         .items
         .extend(method_headers.iter().map(|header| {
             parse_quote! {
@@ -204,8 +221,11 @@ fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream
 
     quote! {
         #service_trait
-        #server_response_impl
-        impl #internal::RustyRpcServiceClient for dyn #service_name {}
+        impl #internal::RustyRpcServiceClient for dyn #service_name {
+            type ServiceProxy = #service_proxy_name;
+        }
+        #service_proxy_type
+        #service_proxy_impl
     }
 }
 
@@ -224,11 +244,15 @@ fn data_type_to_token_stream(type_: &DataType) -> TokenStream {
 }
 
 fn return_type_to_token_stream(type_: &ReturnType) -> TokenStream {
-    match type_ {
+    let inner_return_type = match type_ {
         ReturnType::ServiceRef(x) => {
+            let internal = quote! { ::rusty_rpc_lib::internal_for_macro };
             let temp = to_syn_ident(x);
-            quote! { &dyn #temp }
+            quote! { #internal::ServiceRef<dyn #temp> }
         }
         ReturnType::Data(x) => data_type_to_token_stream(x),
+    };
+    quote! {
+        ::std::io::Result<#inner_return_type>
     }
 }
