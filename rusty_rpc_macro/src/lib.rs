@@ -7,7 +7,8 @@ use proc_macro2::{Span, TokenStream};
 use quote::{quote, ToTokens};
 use syn::{
     parse::{self, Parser},
-    parse_macro_input, parse_quote, Field, FnArg, ItemStruct, ItemTrait, LitStr, TraitItemMethod,
+    parse_macro_input, parse_quote, Field, FnArg, ItemImpl, ItemStruct, ItemTrait, LitStr,
+    TraitItemMethod,
 };
 
 use interface::{Identifier, Service, Struct, Type};
@@ -57,16 +58,70 @@ pub fn interface_file(input: proc_macro::TokenStream) -> proc_macro::TokenStream
     .into()
 }
 
+/// Macro to be used on each service implementation.
+///
+/// Example:
+/// ```ignore
+/// // A service named MyService is defined in the protocol file elsewhere
+/// // using the interface_file! macro
+///
+/// struct MyServiceImpl;
+///
+/// #[service_impl]
+/// impl MyService for MyServiceImpl {
+///     // ...
+/// }
+/// ```
+#[proc_macro_attribute]
+pub fn service_impl(
+    args: proc_macro::TokenStream,
+    input: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    eprintln!("{:?}", args);
+    let original_input = TokenStream::from(input.clone());
+    let input = parse_macro_input!(input as ItemImpl);
+
+    let service_type_name = input.self_ty;
+    let service_trait_name = match input.trait_ {
+        Some((_, x, _)) => x,
+        None => my_compile_error!(
+            "#[service_impl] should only be used on service trait implementations."
+        ),
+    };
+
+    let internal = quote! { ::rusty_rpc_lib::internal_for_macro };
+    quote! {
+        #original_input
+
+        impl #internal::RustyRpcService for #service_type_name {
+            fn call_method(
+                &mut self,
+                method_and_args: #internal::MethodAndArgs,
+                connection: &mut #internal::ServiceCollection,
+            ) -> ::std::io::Result<#internal::ServerMessage> {
+                <#service_type_name as #service_trait_name>::_rusty_rpc_forward_call_method(
+                    self,
+                    method_and_args,
+                    connection
+                )
+            }
+        }
+    }
+    .into()
+}
+
 fn code_for_struct(struct_name: &Identifier, struct_: &Struct) -> TokenStream {
     let struct_name = to_syn_ident(struct_name);
+
+    // TODO Do I derive Clone if there's a service inside?
     let mut struct_type: ItemStruct = parse_quote! {
+        #[derive(Debug, Clone)]
         pub struct #struct_name {}
     };
     let struct_fields = match &mut struct_type.fields {
         syn::Fields::Named(x) => &mut x.named,
         _ => unreachable!(),
     };
-
     *struct_fields = struct_
         .fields
         .iter()
@@ -79,19 +134,39 @@ fn code_for_struct(struct_name: &Identifier, struct_: &Struct) -> TokenStream {
         })
         .collect();
 
-    struct_type.into_token_stream()
+    let struct_impl: ItemImpl = parse_quote! {
+        impl ::rusty_rpc_lib::internal_for_macro::RustyRpcStruct for #struct_name {
+        }
+    };
+
+    quote! {
+        #struct_type
+        #struct_impl
+    }
 }
 
 fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream {
     let service_name = to_syn_ident(service_name);
-    let mut trait_: ItemTrait = parse_quote! {
-        pub trait #service_name {}
+
+    let internal = quote! { ::rusty_rpc_lib::internal_for_macro };
+    let mut service_trait: ItemTrait = parse_quote! {
+        pub trait #service_name: #internal::RustyRpcService {
+            /// This method should be automatically implemented by using the `#[service_impl]` macro
+            #[doc(hidden)]
+            fn _rusty_rpc_forward_call_method(
+                &mut self,
+                method_and_args: #internal::MethodAndArgs,
+                connection: &mut #internal::ServiceCollection,
+            ) -> ::std::io::Result<#internal::ServerMessage> {
+                todo!()
+            }
+        }
     };
 
-    trait_.items = service
-        .methods
-        .iter()
-        .map(|(method_name, method_type)| {
+    // Add methods corresponding to the protocol file.
+    service_trait
+        .items
+        .extend(service.methods.iter().map(|(method_name, method_type)| {
             let method_name = to_syn_ident(method_name);
             let non_self_params: Vec<FnArg> = method_type
                 .non_self_params
@@ -109,10 +184,9 @@ fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream
                 fn #method_name(&self, #(#non_self_params),*) -> #return_type;
             };
             method.into()
-        })
-        .collect();
+        }));
 
-    trait_.into_token_stream()
+    service_trait.to_token_stream()
 }
 
 fn to_syn_ident(ident: &Identifier) -> syn::Ident {

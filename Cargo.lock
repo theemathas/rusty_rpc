@@ -339,6 +339,7 @@ dependencies = [
  "nom",
  "proc-macro2",
  "quote",
+ "rusty_rpc_lib",
  "syn",
 ]
 

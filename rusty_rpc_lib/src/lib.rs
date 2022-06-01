@@ -1,3 +1,5 @@
+pub mod internal_for_macro;
+
 mod messages;
 mod service_collection;
 mod traits;
