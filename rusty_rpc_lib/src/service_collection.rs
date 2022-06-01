@@ -44,6 +44,6 @@ impl ServiceCollection {
         &self,
         service_id: ServiceId,
     ) -> Option<Arc<Mutex<Box<dyn RustyRpcService>>>> {
-        self.active_services.get(&service_id).map(|x| x.clone())
+        self.active_services.get(&service_id).cloned()
     }
 }
