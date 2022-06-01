@@ -1,6 +1,7 @@
 pub mod internal_for_macro;
 
 pub use messages::ServiceRef;
+use traits::ClientStreamSink;
 pub use traits::{RustyRpcServiceClient, RustyRpcServiceProxy, RustyRpcServiceServer};
 
 mod messages;
@@ -9,6 +10,7 @@ mod traits;
 mod util;
 
 use std::io;
+use std::sync::{Arc, Mutex};
 
 use bytes::BytesMut;
 use futures::{SinkExt, StreamExt};
@@ -16,10 +18,11 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpListener;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
-use messages::{ClientMessage, ServerMessage};
+use messages::{service_ref_from_service_proxy, ClientMessage, ServerMessage};
 use service_collection::ServiceCollection;
 use util::string_io_error;
 
+use crate::messages::ServiceId;
 use crate::util::other_io_error;
 
 /// Starts a server, accepting new connections in an infinite loop.
@@ -54,7 +57,7 @@ async fn handle_connection<
     let initial_service_id = service_collection.register_service(Box::new(T::default()));
     assert_eq!(initial_service_id.0, 0);
 
-    // This implements Stream<Item=BytesMut> and Sink<Bytes>.
+    // This implements Stream<Item=io::Result<BytesMut>> and Sink<Bytes>.
     // So we can send and receive "packets" of byte blocks of arbitrary size.
     let mut bytes_stream_sink = Framed::new(read_write, LengthDelimitedCodec::new());
 
@@ -84,6 +87,23 @@ async fn handle_connection<
     Ok(())
 }
 
-pub async fn start_client<T: RustyRpcServiceClient>(_rw: impl AsyncRead + AsyncWrite) {
-    todo!()
+/// Start a client connection with the specified initial service.
+pub async fn start_client<T: RustyRpcServiceClient>(
+    read_write: impl AsyncRead + AsyncWrite + 'static + Unpin,
+) -> ServiceRef<T> {
+    let initial_service_id = ServiceId(0);
+    let bytes_stream_sink = Framed::new(read_write, LengthDelimitedCodec::new());
+    let client_stream_sink = bytes_stream_sink
+        .map(
+            |in_bytes: io::Result<BytesMut>| -> io::Result<ServerMessage> {
+                in_bytes.and_then(|x| ServerMessage::try_from(x.freeze()).map_err(other_io_error))
+            },
+        )
+        .with(|out_message: ClientMessage| {
+            let out_bytes: BytesMut = out_message.into();
+            futures::future::ready(io::Result::Ok(out_bytes.freeze()))
+        });
+    let wrapped: Arc<Mutex<dyn ClientStreamSink>> = Arc::new(Mutex::new(client_stream_sink));
+    let proxy = T::ServiceProxy::from_service_id(initial_service_id, wrapped as _);
+    service_ref_from_service_proxy(proxy)
 }

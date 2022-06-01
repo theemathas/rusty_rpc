@@ -1,6 +1,9 @@
 use std::io;
+use std::sync::{Arc, Mutex};
 
-use crate::messages::{MethodAndArgs, ServerMessage};
+use futures::{Sink, Stream};
+
+use crate::messages::{ClientMessage, MethodAndArgs, ServerMessage, ServiceId};
 use crate::ServiceCollection;
 
 /// For any given service trait `MyService` which came from the
@@ -28,7 +31,22 @@ pub trait RustyRpcServiceClient {
 /// dropped on the client side.
 #[allow(drop_bounds)]
 pub trait RustyRpcServiceProxy<T: RustyRpcServiceClient + ?Sized>: Drop {
-    // TODO Do I need anything here?
+    #[doc(hidden)]
+    fn from_service_id(
+        service_id: ServiceId,
+        stream_sink: Arc<Mutex<dyn ClientStreamSink>>,
+    ) -> Self;
+}
+
+/// Alias for `Stream + Sink`, so we can use it as a dyn trait. Represents the
+/// communication channel endpoint on the client's side
+pub trait ClientStreamSink:
+    Stream<Item = io::Result<ServerMessage>> + Sink<ClientMessage, Error = io::Error>
+{
+}
+impl<T: Stream<Item = io::Result<ServerMessage>> + Sink<ClientMessage, Error = io::Error>>
+    ClientStreamSink for T
+{
 }
 
 /// This trait will be automatically implemented by any user type marked with

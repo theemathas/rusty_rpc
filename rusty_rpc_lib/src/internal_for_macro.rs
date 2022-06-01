@@ -3,10 +3,9 @@
 //!
 //! Contains various exports that macros need access to.
 
-pub use crate::messages::{
-    service_ref_from_service_proxy, MethodAndArgs, ServerMessage, ServiceRef,
-};
+pub use crate::messages::{MethodAndArgs, ServerMessage, ServiceId, ServiceRef};
 pub use crate::service_collection::ServiceCollection;
 pub use crate::traits::{
-    RustyRpcServiceClient, RustyRpcServiceProxy, RustyRpcServiceServer, RustyRpcStruct,
+    ClientStreamSink, RustyRpcServiceClient, RustyRpcServiceProxy, RustyRpcServiceServer,
+    RustyRpcStruct,
 };

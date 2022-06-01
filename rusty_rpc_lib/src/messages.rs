@@ -15,6 +15,12 @@ impl ServiceId {
 
 /// The message that the server responds to the client, giving back the RPC return value.
 pub struct ServerMessage {}
+impl TryFrom<Bytes> for ServerMessage {
+    type Error = SimpleError;
+    fn try_from(_: Bytes) -> Result<ServerMessage, SimpleError> {
+        todo!()
+    }
+}
 impl From<ServerMessage> for BytesMut {
     fn from(_: ServerMessage) -> Self {
         todo!()
@@ -32,6 +38,11 @@ impl TryFrom<Bytes> for ClientMessage {
     type Error = SimpleError;
 
     fn try_from(_: Bytes) -> Result<ClientMessage, SimpleError> {
+        todo!()
+    }
+}
+impl From<ClientMessage> for BytesMut {
+    fn from(_: ClientMessage) -> Self {
         todo!()
     }
 }
