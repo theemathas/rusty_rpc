@@ -15,7 +15,10 @@ impl ServiceId {
 
 /// The message that the server responds to the client, giving back the RPC return value.
 #[derive(Serialize, Deserialize)]
-pub struct ServerMessage {}
+pub enum ServerMessage {
+    DropServiceDone,
+    MethodReturned(ReturnValue),
+}
 impl TryFrom<Bytes> for ServerMessage {
     type Error = rmp_serde::decode::Error;
     fn try_from(bytes: Bytes) -> Result<ServerMessage, Self::Error> {
@@ -30,13 +33,17 @@ impl From<ServerMessage> for Bytes {
     }
 }
 
+/// Represents the return value of an RPC call, as written on the wire.
+#[derive(Serialize, Deserialize)]
+pub struct ReturnValue {
+    // TODO
+}
+
 /// The message that the client sends to the server in order to call an RPC.
 #[derive(Serialize, Deserialize)]
-pub struct ClientMessage {
-    // TODO implement dropping a service
-    /// The service that the client wants to call a method on.
-    pub service_id: ServiceId,
-    pub method_and_args: MethodAndArgs,
+pub enum ClientMessage {
+    DropService(ServiceId),
+    CallMethod(ServiceId, MethodAndArgs),
 }
 impl TryFrom<Bytes> for ClientMessage {
     type Error = rmp_serde::decode::Error;
@@ -54,7 +61,7 @@ impl From<ClientMessage> for Bytes {
 }
 
 /// Represents the data used to specify the method and arguments for a given RPC
-/// call.
+/// call, as written on the wire.
 #[derive(Serialize, Deserialize)]
 pub struct MethodAndArgs {
     // TODO

@@ -65,19 +65,33 @@ async fn handle_connection<
         let received_bytes = received_bytes_result?; // Handle I/O errors.
         let client_message =
             ClientMessage::try_from(received_bytes.freeze()).map_err(other_io_error)?;
-        let ClientMessage {
-            service_id,
-            method_and_args,
-        } = client_message;
+        let message_to_send: ServerMessage = match client_message {
+            ClientMessage::DropService(service_id) => {
+                let service_arc = service_collection
+                    .remove_service_arc(service_id)
+                    .ok_or_else(|| {
+                        string_io_error(format!("Invalid service ID: {}", service_id.0))
+                    })?;
 
-        let message_to_send: ServerMessage = {
-            let service_arc = service_collection
-                .get_service_arc(service_id)
-                .ok_or_else(|| string_io_error(format!("Invalid service ID: {}", service_id.0)))?;
-            let mut service_guard = service_arc
-                .try_lock()
-                .expect("Service somehow in use while trying to call a method on it.");
-            service_guard.parse_and_call_method_locally(method_and_args, service_collection)?
+                let service_mutex = Arc::try_unwrap(service_arc)
+                    .ok() // Needed because the Err field doesn't impl Debug.
+                    .expect("Client attempted to drop a service that is still in use.");
+                std::mem::drop(service_mutex.into_inner());
+
+                ServerMessage::DropServiceDone
+            }
+            ClientMessage::CallMethod(service_id, method_and_args) => {
+                let service_arc =
+                    service_collection
+                        .get_service_arc(service_id)
+                        .ok_or_else(|| {
+                            string_io_error(format!("Invalid service ID: {}", service_id.0))
+                        })?;
+                let mut service_guard = service_arc
+                    .try_lock()
+                    .expect("Service somehow in use while trying to call a method on it.");
+                service_guard.parse_and_call_method_locally(method_and_args, service_collection)?
+            }
         };
 
         bytes_stream_sink.send(Bytes::from(message_to_send)).await?;

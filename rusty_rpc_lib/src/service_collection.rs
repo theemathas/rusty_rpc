@@ -39,6 +39,14 @@ impl ServiceCollection {
         }
     }
 
+    /// Unregisters the service with a given ID and returns it.
+    pub(crate) fn remove_service_arc(
+        &mut self,
+        service_id: ServiceId,
+    ) -> Option<Arc<Mutex<Box<dyn RustyRpcServiceServer>>>> {
+        self.active_services.remove(&service_id)
+    }
+
     /// Returns the service with a given ID, or None if it doesn't exist.
     pub(crate) fn get_service_arc(
         &self,
