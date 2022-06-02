@@ -9,3 +9,5 @@ pub use crate::traits::{
     ClientStreamSink, RustyRpcServiceClient, RustyRpcServiceProxy, RustyRpcServiceServer,
     RustyRpcStruct,
 };
+
+pub use ::serde::{Deserialize, Serialize};

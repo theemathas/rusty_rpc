@@ -5,10 +5,7 @@ use std::{env::current_dir, fs};
 
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
-use syn::parse::Parser;
-use syn::{
-    parse, parse_macro_input, parse_quote, Field, FnArg, ItemImpl, ItemStruct, ItemTrait, LitStr,
-};
+use syn::{parse, parse_macro_input, parse_quote, FnArg, ItemImpl, LitStr};
 
 use interface::{DataType, Identifier, ReturnType, Service, Struct};
 
@@ -109,43 +106,32 @@ pub fn service_server_impl(
 }
 
 fn code_for_struct(struct_name: &Identifier, struct_: &Struct) -> TokenStream {
+    let internal = quote! { ::rusty_rpc_lib::internal_for_macro };
     let struct_name = to_syn_ident(struct_name);
 
-    // TODO Do I derive Clone if there's a service inside?
-    let mut struct_type: ItemStruct = parse_quote! {
-        #[derive(Debug, Clone)]
-        pub struct #struct_name {}
-    };
-    let struct_fields = match &mut struct_type.fields {
-        syn::Fields::Named(x) => &mut x.named,
-        _ => unreachable!(),
-    };
-    *struct_fields = struct_
+    let struct_field_tokens: Vec<TokenStream> = struct_
         .fields
         .iter()
         .map(|(field_name, field_type)| {
             let field_name = to_syn_ident(field_name);
             let type_token_stream = data_type_to_token_stream(field_type);
-            Field::parse_named
-                .parse2(quote! { pub #field_name: #type_token_stream })
-                .unwrap()
+            quote! { pub #field_name: #type_token_stream, }
         })
         .collect();
-
-    let struct_impl: ItemImpl = parse_quote! {
-        impl ::rusty_rpc_lib::internal_for_macro::RustyRpcStruct for #struct_name {
-        }
-    };
-
     quote! {
-        #struct_type
-        #struct_impl
+        #[derive(::std::fmt::Debug, #internal::Serialize, #internal::Deserialize, ::std::clone::Clone)]
+        pub struct #struct_name {
+            #(#struct_field_tokens)*
+        }
+        impl #internal::RustyRpcStruct for #struct_name {
+        }
     }
 }
 
 fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream {
     let internal = quote! { ::rusty_rpc_lib::internal_for_macro };
     let service_name = to_syn_ident(service_name);
+    let service_proxy_name = format_ident!("{}_RustyRpcServiceProxy", service_name);
 
     let method_headers: Vec<TokenStream> = service
         .methods
@@ -155,11 +141,10 @@ fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream
             let non_self_params: Vec<FnArg> = method_type
                 .non_self_params
                 .iter()
-                .map(|(param_name, param_type)| {
+                .map(|(param_name, param_type)| -> FnArg {
                     let param_name = to_syn_ident(param_name);
                     let param_type = data_type_to_token_stream(param_type);
-                    let temp: FnArg = parse_quote! { #param_name: #param_type };
-                    temp
+                    parse_quote! { #param_name: #param_type }
                 })
                 .collect();
             let return_type = return_type_to_token_stream(&method_type.return_type);
@@ -171,7 +156,7 @@ fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream
         })
         .collect();
 
-    let mut service_trait: ItemTrait = parse_quote! {
+    quote! {
         pub trait #service_name {
             /// This method should be automatically implemented by using the `#[service_server_impl]` macro
             #[doc(hidden)]
@@ -182,19 +167,16 @@ fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream
             ) -> ::std::io::Result<#internal::ServerMessage> {
                 todo!()
             }
-        }
-    };
-    // Add methods corresponding to the protocol file.
-    service_trait
-        .items
-        .extend(method_headers.iter().map(|header| {
-            parse_quote! {
-                #header ;
-            }
-        }));
 
-    let service_proxy_name = format_ident!("{}_RustyRpcServiceProxy", service_name);
-    let service_proxy_type = quote! {
+            #(
+                #method_headers ;
+            )*
+        }
+        impl #internal::RustyRpcServiceClient for dyn #service_name {
+            type ServiceProxy = #service_proxy_name;
+        }
+
+        /// ServiceProxy for #service_name
         pub struct #service_proxy_name {
             service_id: #internal::ServiceId,
             bytes_stream_sink: ::std::sync::Arc<::std::sync::Mutex<dyn #internal::ClientStreamSink>>,
@@ -215,28 +197,13 @@ fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream
                 todo!()
             }
         }
-    };
-
-    let mut service_proxy_impl: ItemImpl = parse_quote! {
-        impl #service_name for #service_proxy_name { }
-    };
-    service_proxy_impl
-        .items
-        .extend(method_headers.iter().map(|header| {
-            parse_quote! {
-                #header {
+        impl #service_name for #service_proxy_name {
+            #(
+                #method_headers {
                     todo!()  // Serialize arguments and send to server
                 }
-            }
-        }));
-
-    quote! {
-        #service_trait
-        impl #internal::RustyRpcServiceClient for dyn #service_name {
-            type ServiceProxy = #service_proxy_name;
+            )*
         }
-        #service_proxy_type
-        #service_proxy_impl
     }
 }
 
