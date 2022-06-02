@@ -196,18 +196,22 @@ fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream
     let service_proxy_name = format_ident!("{}_RustyRpcServiceProxy", service_name);
     let service_proxy_type = quote! {
         pub struct #service_proxy_name {
-            // TODO
+            service_id: #internal::ServiceId,
+            bytes_stream_sink: ::std::sync::Arc<::std::sync::Mutex<dyn #internal::ClientStreamSink>>,
         }
         impl #internal::RustyRpcServiceProxy<dyn #service_name> for #service_proxy_name {
             fn from_service_id(
                 service_id: #internal::ServiceId,
                 bytes_stream_sink: ::std::sync::Arc<::std::sync::Mutex<dyn #internal::ClientStreamSink>>,
             ) -> Self {
-                todo!()
+                Self { service_id, bytes_stream_sink }
             }
         }
         impl Drop for #service_proxy_name {
             fn drop(&mut self) {
+                if std::thread::panicking() {
+                    return;
+                }
                 todo!()
             }
         }
