@@ -12,7 +12,7 @@ mod util;
 use std::io;
 use std::sync::{Arc, Mutex};
 
-use bytes::BytesMut;
+use bytes::{Bytes, BytesMut};
 use futures::{SinkExt, StreamExt};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpListener;
@@ -80,8 +80,7 @@ async fn handle_connection<
             service_guard.parse_and_call_method_locally(method_and_args, service_collection)?
         };
 
-        let bytes_to_send: BytesMut = message_to_send.into();
-        bytes_stream_sink.send(bytes_to_send.freeze()).await?;
+        bytes_stream_sink.send(Bytes::from(message_to_send)).await?;
     }
 
     Ok(())
@@ -103,8 +102,7 @@ pub async fn start_client<
             },
         )
         .with(|out_message: ClientMessage| {
-            let out_bytes: BytesMut = out_message.into();
-            futures::future::ready(io::Result::Ok(out_bytes.freeze()))
+            futures::future::ready(io::Result::Ok(Bytes::from(out_message)))
         });
     let wrapped: Arc<Mutex<dyn ClientStreamSink>> = Arc::new(Mutex::new(client_stream_sink));
     let proxy = T::ServiceProxy::from_service_id(initial_service_id, wrapped as _);

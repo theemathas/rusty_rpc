@@ -1,11 +1,11 @@
 use std::ops::Deref;
 
-use bytes::{Bytes, BytesMut};
-use simple_error::SimpleError;
+use bytes::Bytes;
+use serde::{Deserialize, Serialize};
 
 use crate::RustyRpcServiceClient;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ServiceId(pub u64);
 impl ServiceId {
     pub fn increment(&mut self) {
@@ -14,20 +14,24 @@ impl ServiceId {
 }
 
 /// The message that the server responds to the client, giving back the RPC return value.
+#[derive(Serialize, Deserialize)]
 pub struct ServerMessage {}
 impl TryFrom<Bytes> for ServerMessage {
-    type Error = SimpleError;
-    fn try_from(_: Bytes) -> Result<ServerMessage, SimpleError> {
-        todo!()
+    type Error = rmp_serde::decode::Error;
+    fn try_from(bytes: Bytes) -> Result<ServerMessage, Self::Error> {
+        rmp_serde::decode::from_slice(&bytes)
     }
 }
-impl From<ServerMessage> for BytesMut {
-    fn from(_: ServerMessage) -> Self {
-        todo!()
+impl From<ServerMessage> for Bytes {
+    fn from(msg: ServerMessage) -> Bytes {
+        rmp_serde::to_vec(&msg)
+            .expect("Serialization of ServerMessage somehow failed.")
+            .into()
     }
 }
 
 /// The message that the client sends to the server in order to call an RPC.
+#[derive(Serialize, Deserialize)]
 pub struct ClientMessage {
     // TODO implement dropping a service
     /// The service that the client wants to call a method on.
@@ -35,20 +39,23 @@ pub struct ClientMessage {
     pub method_and_args: MethodAndArgs,
 }
 impl TryFrom<Bytes> for ClientMessage {
-    type Error = SimpleError;
+    type Error = rmp_serde::decode::Error;
 
-    fn try_from(_: Bytes) -> Result<ClientMessage, SimpleError> {
-        todo!()
+    fn try_from(bytes: Bytes) -> Result<ClientMessage, Self::Error> {
+        rmp_serde::decode::from_slice(&bytes)
     }
 }
-impl From<ClientMessage> for BytesMut {
-    fn from(_: ClientMessage) -> Self {
-        todo!()
+impl From<ClientMessage> for Bytes {
+    fn from(msg: ClientMessage) -> Bytes {
+        rmp_serde::to_vec(&msg)
+            .expect("Serialization of ClientMessage somehow failed.")
+            .into()
     }
 }
 
 /// Represents the data used to specify the method and arguments for a given RPC
 /// call.
+#[derive(Serialize, Deserialize)]
 pub struct MethodAndArgs {
     // TODO
 }
