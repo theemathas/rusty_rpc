@@ -88,8 +88,11 @@ async fn handle_connection<
 }
 
 /// Start a client connection with the specified initial service.
-pub async fn start_client<T: RustyRpcServiceClient>(
-    read_write: impl AsyncRead + AsyncWrite + 'static + Unpin,
+pub async fn start_client<
+    T: RustyRpcServiceClient + ?Sized,
+    RW: AsyncRead + AsyncWrite + 'static + Unpin,
+>(
+    read_write: RW,
 ) -> ServiceRef<T> {
     let initial_service_id = ServiceId(0);
     let bytes_stream_sink = Framed::new(read_write, LengthDelimitedCodec::new());

@@ -341,6 +341,7 @@ dependencies = [
  "quote",
  "rusty_rpc_lib",
  "syn",
+ "tokio",
 ]
 
 [[package]]
