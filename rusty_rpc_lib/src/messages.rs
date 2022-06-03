@@ -74,8 +74,8 @@ impl From<ClientMessage> for Bytes {
 #[derive(Serialize, Deserialize)]
 pub struct MethodArgs(pub Vec<u8>);
 
-enum InnerServiceRefMut<T: RustyRpcServiceClient + ?Sized> {
-    RemoteServiceRefMut(T::ServiceProxy),
+enum InnerServiceRefMut<'a, T: RustyRpcServiceClient + ?Sized> {
+    RemoteServiceRefMut(T::ServiceProxy, PhantomData<&'a T>),
     OwnedLocalService(Box<dyn RustyRpcServiceServer>, PhantomData<T>),
 }
 
@@ -90,11 +90,11 @@ enum InnerServiceRefMut<T: RustyRpcServiceClient + ?Sized> {
 ///
 /// The type `T` should be something like `dyn MyService` (bare unsized dyn
 /// trait).
-pub struct ServiceRefMut<T: RustyRpcServiceClient + ?Sized>(
+pub struct ServiceRefMut<'a, T: RustyRpcServiceClient + ?Sized>(
     /// Do enum inside struct to get private enum variants.
-    InnerServiceRefMut<T>,
+    InnerServiceRefMut<'a, T>,
 );
-impl<T: RustyRpcServiceClient + ?Sized> ServiceRefMut<T> {
+impl<'a, T: RustyRpcServiceClient + ?Sized> ServiceRefMut<'a, T> {
     /// Used on the server side.
     pub fn new<S: RustyRpcServiceServerWithKnownClientType<ClientType = T>>(inner: S) -> Self {
         ServiceRefMut(InnerServiceRefMut::OwnedLocalService(
@@ -104,21 +104,21 @@ impl<T: RustyRpcServiceClient + ?Sized> ServiceRefMut<T> {
     }
 }
 /// Used only on the client side.
-impl<T: RustyRpcServiceClient + ?Sized> Deref for ServiceRefMut<T> {
+impl<'a, T: RustyRpcServiceClient + ?Sized> Deref for ServiceRefMut<'a, T> {
     type Target = T::ServiceProxy;
     fn deref(&self) -> &T::ServiceProxy {
         match &self.0 {
-            InnerServiceRefMut::RemoteServiceRefMut(x) => x,
+            InnerServiceRefMut::RemoteServiceRefMut(x, _) => x,
             InnerServiceRefMut::OwnedLocalService(..) => {
                 panic!("Tried to deref() a ServiceRefMut on server side.")
             }
         }
     }
 }
-impl<T: RustyRpcServiceClient + ?Sized> DerefMut for ServiceRefMut<T> {
+impl<'a, T: RustyRpcServiceClient + ?Sized> DerefMut for ServiceRefMut<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         match &mut self.0 {
-            InnerServiceRefMut::RemoteServiceRefMut(x) => x,
+            InnerServiceRefMut::RemoteServiceRefMut(x, _) => x,
             InnerServiceRefMut::OwnedLocalService(..) => {
                 panic!("Tried to deref_mut() a ServiceRefMut on server side.")
             }
@@ -127,10 +127,13 @@ impl<T: RustyRpcServiceClient + ?Sized> DerefMut for ServiceRefMut<T> {
 }
 
 /// For macro and internal use only.
-pub fn service_ref_from_service_proxy<T: RustyRpcServiceClient + ?Sized>(
+pub fn service_ref_from_service_proxy<'a, T: RustyRpcServiceClient + ?Sized>(
     service_proxy: T::ServiceProxy,
-) -> ServiceRefMut<T> {
-    ServiceRefMut(InnerServiceRefMut::RemoteServiceRefMut(service_proxy))
+) -> ServiceRefMut<'a, T> {
+    ServiceRefMut(InnerServiceRefMut::RemoteServiceRefMut(
+        service_proxy,
+        PhantomData,
+    ))
 }
 
 /// For macro use only.
@@ -138,7 +141,7 @@ pub fn local_service_from_service_ref<T: RustyRpcServiceClient + ?Sized>(
     service_ref: ServiceRefMut<T>,
 ) -> Option<Box<dyn RustyRpcServiceServer>> {
     match service_ref.0 {
-        InnerServiceRefMut::RemoteServiceRefMut(_) => None,
+        InnerServiceRefMut::RemoteServiceRefMut(..) => None,
         InnerServiceRefMut::OwnedLocalService(x, _) => Some(x),
     }
 }
