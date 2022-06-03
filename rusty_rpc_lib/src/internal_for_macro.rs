@@ -9,5 +9,8 @@ pub use crate::traits::{
     ClientStreamSink, RustyRpcServiceClient, RustyRpcServiceProxy, RustyRpcServiceServer,
     RustyRpcStruct,
 };
+pub use crate::util::string_io_error;
 
-pub use ::serde::{Deserialize, Serialize};
+pub use futures::StreamExt;
+pub use serde::{Deserialize, Serialize};
+pub use tokio::sync::Mutex;

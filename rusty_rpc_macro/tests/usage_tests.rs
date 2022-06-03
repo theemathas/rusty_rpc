@@ -42,7 +42,7 @@ fn test_types() {
         need_rpc_service_server(service);
 
         fn need_my_service(
-            _: impl MyService + rusty_rpc_lib::internal_for_macro::RustyRpcServiceProxy<dyn MyService>,
+            _: impl MyService + rusty_rpc_lib::internal_for_macro::RustyRpcServiceProxy,
         ) {
         }
         need_my_service(unimplemented!() as <dyn MyService as RustyRpcServiceClient>::ServiceProxy);
@@ -82,10 +82,11 @@ async fn simple_usage() {
     let server_handle =
         tokio::spawn(async { start_server::<DummyService>(listener).await.unwrap() });
     let client_handle = tokio::spawn(async move {
-        let socket = TcpSocket::new_v4().unwrap().connect(addr).await.unwrap();
-        let service = start_client::<dyn MyService, _>(socket).await;
+        let stream = TcpSocket::new_v4().unwrap().connect(addr).await.unwrap();
+        let service = start_client::<dyn MyService, _>(stream).await;
         let foo_output = service.foo().unwrap();
         assert_eq!(123, foo_output);
+        service.close().await.unwrap();
     });
     client_handle.await.expect("Client crashed.");
     server_handle.abort();

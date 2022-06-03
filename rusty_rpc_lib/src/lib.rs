@@ -10,12 +10,13 @@ mod traits;
 mod util;
 
 use std::io;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use bytes::{Bytes, BytesMut};
 use futures::{SinkExt, StreamExt};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpListener;
+use tokio::sync::Mutex;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
 use messages::{service_ref_from_service_proxy, ClientMessage, ServerMessage};
@@ -103,7 +104,7 @@ async fn handle_connection<
 /// Start a client connection with the specified initial service.
 pub async fn start_client<
     T: RustyRpcServiceClient + ?Sized,
-    RW: AsyncRead + AsyncWrite + 'static + Unpin,
+    RW: AsyncRead + AsyncWrite + 'static + Send + Unpin,
 >(
     read_write: RW,
 ) -> ServiceRef<T> {

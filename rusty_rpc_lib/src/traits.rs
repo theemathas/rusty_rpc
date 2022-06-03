@@ -1,9 +1,10 @@
 use std::io;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use futures::{Sink, Stream};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use tokio::sync::Mutex;
 
 use crate::messages::{ClientMessage, MethodAndArgs, ServerMessage, ServiceId};
 use crate::ServiceCollection;
@@ -20,19 +21,20 @@ pub trait RustyRpcServiceClient {
     /// A proxy that client uses to reference such a service. This proxy type
     /// will implement the service trait (e.g. MyService).
     ///
-    /// When the ServiceRef for a certain service is dropped on the client
+    /// When the ServiceRef for a certain service is closed on the client
     /// side, the associated resources, are dropped on the server side. If the
     /// type `T` is an implementation of a certain service, then `Response<T>`
     /// will implement the corresponding service trait.
-    type ServiceProxy: RustyRpcServiceProxy<Self>;
+    type ServiceProxy: RustyRpcServiceProxy;
 }
 
 /// Used with [RustyRpcServiceClient]. Something that implements
 /// `RustyRpcServiceProxy<dyn T>` will also always be generated so it implements
-/// `T`. This type is a proxy that deallocates server-side resources when
-/// dropped on the client side.
+/// `T`. This type is a proxy that deallocates server-side resources when the
+/// `.close()` method is called. If it is dropped without being closed, it will
+/// panic.
 #[allow(drop_bounds)]
-pub trait RustyRpcServiceProxy<T: RustyRpcServiceClient + ?Sized>: Drop {
+pub trait RustyRpcServiceProxy: Drop {
     #[doc(hidden)]
     fn from_service_id(
         service_id: ServiceId,
@@ -43,11 +45,15 @@ pub trait RustyRpcServiceProxy<T: RustyRpcServiceClient + ?Sized>: Drop {
 /// Alias for `Stream + Sink`, so we can use it as a dyn trait. Represents the
 /// communication channel endpoint on the client's side
 pub trait ClientStreamSink:
-    Stream<Item = io::Result<ServerMessage>> + Sink<ClientMessage, Error = io::Error>
+    Stream<Item = io::Result<ServerMessage>> + Sink<ClientMessage, Error = io::Error> + Send + Unpin
 {
 }
-impl<T: Stream<Item = io::Result<ServerMessage>> + Sink<ClientMessage, Error = io::Error>>
-    ClientStreamSink for T
+impl<
+        T: Stream<Item = io::Result<ServerMessage>>
+            + Sink<ClientMessage, Error = io::Error>
+            + Send
+            + Unpin,
+    > ClientStreamSink for T
 {
 }
 

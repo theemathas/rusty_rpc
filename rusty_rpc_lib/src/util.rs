@@ -6,6 +6,6 @@ pub fn other_io_error(e: impl Into<Box<dyn error::Error + Send + Sync>>) -> io::
     io::Error::new(io::ErrorKind::Other, e)
 }
 
-pub fn string_io_error(s: String) -> io::Error {
+pub fn string_io_error(s: impl Into<String>) -> io::Error {
     other_io_error(SimpleError::new(s))
 }

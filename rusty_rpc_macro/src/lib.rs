@@ -157,7 +157,7 @@ fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream
         .collect();
 
     quote! {
-        pub trait #service_name {
+        pub trait #service_name: Send {
             /// This method should be automatically implemented by using the `#[service_server_impl]` macro
             #[doc(hidden)]
             fn _rusty_rpc_forward__parse_and_call_method_locally(
@@ -172,21 +172,42 @@ fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream
                 #method_headers ;
             )*
         }
-        impl #internal::RustyRpcServiceClient for dyn #service_name {
+        impl<'a> #internal::RustyRpcServiceClient for dyn #service_name + 'a {
             type ServiceProxy = #service_proxy_name;
         }
 
         /// ServiceProxy for #service_name
         pub struct #service_proxy_name {
             service_id: #internal::ServiceId,
-            bytes_stream_sink: ::std::sync::Arc<::std::sync::Mutex<dyn #internal::ClientStreamSink>>,
+            stream_sink: ::std::sync::Arc<#internal::Mutex<dyn #internal::ClientStreamSink>>,
+            is_closed: ::std::sync::atomic::AtomicBool,
         }
-        impl #internal::RustyRpcServiceProxy<dyn #service_name> for #service_proxy_name {
+        impl #internal::RustyRpcServiceProxy for #service_proxy_name {
             fn from_service_id(
                 service_id: #internal::ServiceId,
-                bytes_stream_sink: ::std::sync::Arc<::std::sync::Mutex<dyn #internal::ClientStreamSink>>,
+                stream_sink: ::std::sync::Arc<#internal::Mutex<dyn #internal::ClientStreamSink>>,
             ) -> Self {
-                Self { service_id, bytes_stream_sink }
+                Self { service_id, stream_sink, is_closed: ::std::sync::atomic::AtomicBool::new(false) }
+            }
+        }
+        impl #service_proxy_name {
+            /// This method should be called only once before it is dropped.
+            async fn close(&self) -> ::std::io::Result<()> {
+                let Self { service_id, stream_sink, is_closed } = self;
+                let ordering = ::std::sync::atomic::Ordering::SeqCst;
+                is_closed.compare_exchange(false, true, ordering, ordering).map_err(|_| #internal::string_io_error(
+                    "Service proxy closed twice."))?;
+                let mut locked = stream_sink.lock().await;
+                use #internal::StreamExt;
+                let response: #internal::ServerMessage = locked.next().await.ok_or_else(|| #internal::string_io_error(
+                    "Server closed communication while client waiting for confirmation for dropped service."))??;
+                match response {
+                    #internal::ServerMessage::DropServiceDone => (),
+                    #internal::ServerMessage::MethodReturned(_) => {
+                        panic!("Server sent return value instead of confirmation for dropped service.")
+                    }
+                };
+                Ok(())
             }
         }
         impl Drop for #service_proxy_name {
@@ -194,7 +215,10 @@ fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream
                 if std::thread::panicking() {
                     return;
                 }
-                todo!()
+                let ordering = ::std::sync::atomic::Ordering::SeqCst;
+                if !self.is_closed.load(ordering) {
+                    panic!("Service proxy dropped without being closed");
+                }
             }
         }
         impl #service_name for #service_proxy_name {
