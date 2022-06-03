@@ -81,7 +81,7 @@ async fn handle_connection<
 
                 ServerMessage::DropServiceDone
             }
-            ClientMessage::CallMethod(service_id, method_and_args) => {
+            ClientMessage::CallMethod(service_id, method_id, method_args) => {
                 let service_arc =
                     service_collection
                         .get_service_arc(service_id)
@@ -91,7 +91,11 @@ async fn handle_connection<
                 let mut service_guard = service_arc
                     .try_lock()
                     .expect("Service somehow in use while trying to call a method on it.");
-                service_guard.parse_and_call_method_locally(method_and_args, service_collection)?
+                service_guard.parse_and_call_method_locally(
+                    method_id,
+                    method_args,
+                    service_collection,
+                )?
             }
         };
 

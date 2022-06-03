@@ -54,7 +54,8 @@ pub fn interface_file(input: proc_macro::TokenStream) -> proc_macro::TokenStream
     .into()
 }
 
-/// Macro to be used on each service implementation.
+/// Macro to be used on each service implementation. It will automatically call
+/// `#[async_trait]` for you.
 ///
 /// Example:
 /// ```ignore
@@ -86,17 +87,20 @@ pub fn service_server_impl(
 
     let internal = quote! { ::rusty_rpc_lib::internal_for_macro };
     quote! {
+        #[#internal::async_trait]
         #original_input
 
         impl #internal::RustyRpcServiceServer for #service_type_name {
             fn parse_and_call_method_locally(
                 &mut self,
-                method_and_args: #internal::MethodAndArgs,
+                method_id: #internal::MethodId,
+                method_args: #internal::MethodArgs,
                 connection: &mut #internal::ServiceCollection,
             ) -> ::std::io::Result<#internal::ServerMessage> {
                 <#service_type_name as #service_trait_name>::_rusty_rpc_forward__parse_and_call_method_locally(
                     self,
-                    method_and_args,
+                    method_id,
+                    method_args,
                     connection
                 )
             }
@@ -151,18 +155,73 @@ fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream
 
             // Without the semicolon or {}
             quote! {
-                fn #method_name(&self, #(#non_self_params),*) -> #return_type
+                async fn #method_name(&self, #(#non_self_params),*) -> #return_type
             }
         })
         .collect();
 
+    let proxy_method_impl: Vec<TokenStream> = method_headers
+        .iter()
+        .zip(&service.methods)
+        .enumerate()
+        .map(
+            |(method_id, (method_header, (_method_name, method_type)))| {
+                let param_names: Vec<&str> = method_type
+                    .non_self_params
+                    .iter()
+                    .map(|x| &*x.0 .0)
+                    .collect();
+                let code_to_parse_return_type = match method_type.return_type {
+                    ReturnType::ServiceRef(_) => quote! { todo!("Parse returned service ID") },
+                    ReturnType::Data(_) => quote! {
+                        match raw_return_value {
+                            #internal::ReturnValue::Data(bytes) =>
+                                #internal::rmp_serde::from_slice(&bytes)
+                                .expect("Server sent malformed return value"),
+                            #internal::ReturnValue::Service(bytes) => panic!(
+                                "Server returned service instead of data.")
+                        }
+                    },
+                };
+                quote! {
+                    #method_header {
+                        let arguments = (#(#param_names),*);
+                        let serialized_arguments = #internal::rmp_serde::to_vec(&arguments)
+                            .expect("Serializing arguments somehow failed.");
+                        let msg_to_send = #internal::ClientMessage::CallMethod(
+                            self.service_id,
+                            #internal::MethodId(#method_id as u64),
+                            #internal::MethodArgs(serialized_arguments)
+                        );
+
+                        let mut locked = self.stream_sink.lock().await;
+                        use #internal::{SinkExt, StreamExt};
+                        locked.send(msg_to_send).await?;
+                        let response_msg: #internal::ServerMessage = locked.next().await.ok_or_else(|| #internal::string_io_error(
+                            "Server closed communication while client waiting for return value."))??;
+                        
+                        let raw_return_value = match response_msg {
+                            #internal::ServerMessage::DropServiceDone => panic!(
+                                "Server sent confirmation for dropped service instead of return value."),
+                            #internal::ServerMessage::MethodReturned(x) => x,
+                        };
+                        let return_value = #code_to_parse_return_type;
+                        Ok(return_value)
+                    }
+                }
+            },
+        )
+        .collect();
+
     quote! {
+        #[#internal::async_trait]
         pub trait #service_name: Send {
             /// This method should be automatically implemented by using the `#[service_server_impl]` macro
             #[doc(hidden)]
             fn _rusty_rpc_forward__parse_and_call_method_locally(
                 &mut self,
-                method_and_args: #internal::MethodAndArgs,
+                method_id: #internal::MethodId,
+                method_args: #internal::MethodArgs,
                 connection: &mut #internal::ServiceCollection,
             ) -> ::std::io::Result<#internal::ServerMessage> {
                 todo!()
@@ -197,10 +256,15 @@ fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream
                 let ordering = ::std::sync::atomic::Ordering::SeqCst;
                 is_closed.compare_exchange(false, true, ordering, ordering).map_err(|_| #internal::string_io_error(
                     "Service proxy closed twice."))?;
+                
+                let msg_to_send = #internal::ClientMessage::DropService(*service_id);
+
                 let mut locked = stream_sink.lock().await;
-                use #internal::StreamExt;
+                use #internal::{SinkExt, StreamExt};
+                locked.send(msg_to_send).await?;
                 let response: #internal::ServerMessage = locked.next().await.ok_or_else(|| #internal::string_io_error(
                     "Server closed communication while client waiting for confirmation for dropped service."))??;
+
                 match response {
                     #internal::ServerMessage::DropServiceDone => (),
                     #internal::ServerMessage::MethodReturned(_) => {
@@ -221,12 +285,9 @@ fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream
                 }
             }
         }
+        #[#internal::async_trait]
         impl #service_name for #service_proxy_name {
-            #(
-                #method_headers {
-                    todo!()  // Serialize arguments and send to server
-                }
-            )*
+            #(#proxy_method_impl)*
         }
     }
 }

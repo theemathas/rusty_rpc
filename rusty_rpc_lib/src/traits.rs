@@ -6,7 +6,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tokio::sync::Mutex;
 
-use crate::messages::{ClientMessage, MethodAndArgs, ServerMessage, ServiceId};
+use crate::messages::{ClientMessage, MethodArgs, MethodId, ServerMessage, ServiceId};
 use crate::ServiceCollection;
 
 /// For any given service trait `MyService` which came from the
@@ -70,7 +70,8 @@ pub trait RustyRpcServiceServer: Send + Sync + 'static {
     #[doc(hidden)]
     fn parse_and_call_method_locally(
         &mut self,
-        method_and_args: MethodAndArgs,
+        method_id: MethodId,
+        method_args: MethodArgs,
         connection: &mut ServiceCollection,
     ) -> io::Result<ServerMessage>;
 }

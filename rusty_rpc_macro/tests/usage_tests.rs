@@ -6,9 +6,9 @@ use tokio::net::{TcpListener, TcpSocket};
 
 interface_file!("rusty_rpc_macro/tests/simple_interface_file.interface");
 
-#[test]
+#[tokio::test]
 #[allow(unreachable_code)]
-fn test_types() {
+async fn test_types() {
     // Just test that stuff compiles.
     if false {
         let bar = Bar { z: 1 };
@@ -17,19 +17,19 @@ fn test_types() {
         struct DummyService;
         #[service_server_impl]
         impl MyService for DummyService {
-            fn foo(&self) -> io::Result<i32> {
+            async fn foo(&self) -> io::Result<i32> {
                 Ok(123)
             }
-            fn bar(&self, _a: i32, _b: Foo) -> io::Result<Foo> {
+            async fn bar(&self, _a: i32, _b: Foo) -> io::Result<Foo> {
                 unimplemented!()
             }
-            fn baz(&self) -> io::Result<ServiceRef<dyn MyService>> {
+            async fn baz(&self) -> io::Result<ServiceRef<dyn MyService>> {
                 Ok(ServiceRef::new(unimplemented!() as Box<dyn MyService>))
             }
         }
 
         let service = DummyService;
-        let _: Foo = service.bar(3, foo.clone()).unwrap();
+        let _: Foo = service.bar(3, foo.clone()).await.unwrap();
 
         // Test that types have the right traits.
         fn need_rpc_struct(_: impl rusty_rpc_lib::internal_for_macro::RustyRpcStruct) {}
@@ -65,13 +65,13 @@ async fn simple_usage() {
     struct DummyService;
     #[service_server_impl]
     impl MyService for DummyService {
-        fn foo(&self) -> io::Result<i32> {
+        async fn foo(&self) -> io::Result<i32> {
             Ok(123)
         }
-        fn bar(&self, _a: i32, _b: Foo) -> io::Result<Foo> {
+        async fn bar(&self, _a: i32, _b: Foo) -> io::Result<Foo> {
             unimplemented!()
         }
-        fn baz(&self) -> io::Result<ServiceRef<dyn MyService>> {
+        async fn baz(&self) -> io::Result<ServiceRef<dyn MyService>> {
             unimplemented!()
         }
     }
@@ -84,7 +84,7 @@ async fn simple_usage() {
     let client_handle = tokio::spawn(async move {
         let stream = TcpSocket::new_v4().unwrap().connect(addr).await.unwrap();
         let service = start_client::<dyn MyService, _>(stream).await;
-        let foo_output = service.foo().unwrap();
+        let foo_output = service.foo().await.unwrap();
         assert_eq!(123, foo_output);
         service.close().await.unwrap();
     });

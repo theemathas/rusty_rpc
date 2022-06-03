@@ -3,7 +3,9 @@
 //!
 //! Contains various exports that macros need access to.
 
-pub use crate::messages::{MethodAndArgs, ServerMessage, ServiceId, ServiceRef};
+pub use crate::messages::{
+    ClientMessage, MethodArgs, MethodId, ReturnValue, ServerMessage, ServiceId, ServiceRef,
+};
 pub use crate::service_collection::ServiceCollection;
 pub use crate::traits::{
     ClientStreamSink, RustyRpcServiceClient, RustyRpcServiceProxy, RustyRpcServiceServer,
@@ -11,6 +13,9 @@ pub use crate::traits::{
 };
 pub use crate::util::string_io_error;
 
-pub use futures::StreamExt;
+pub use async_trait::async_trait;
+pub use bytes::Bytes;
+pub use futures::{SinkExt, StreamExt};
+pub use rmp_serde;
 pub use serde::{Deserialize, Serialize};
 pub use tokio::sync::Mutex;

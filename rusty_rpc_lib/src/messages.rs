@@ -35,15 +35,19 @@ impl From<ServerMessage> for Bytes {
 
 /// Represents the return value of an RPC call, as written on the wire.
 #[derive(Serialize, Deserialize)]
-pub struct ReturnValue {
-    // TODO
+pub enum ReturnValue {
+    Data(Vec<u8>),
+    Service(ServiceId),
 }
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MethodId(pub u64);
 
 /// The message that the client sends to the server in order to call an RPC.
 #[derive(Serialize, Deserialize)]
 pub enum ClientMessage {
     DropService(ServiceId),
-    CallMethod(ServiceId, MethodAndArgs),
+    CallMethod(ServiceId, MethodId, MethodArgs),
 }
 impl TryFrom<Bytes> for ClientMessage {
     type Error = rmp_serde::decode::Error;
@@ -63,9 +67,7 @@ impl From<ClientMessage> for Bytes {
 /// Represents the data used to specify the method and arguments for a given RPC
 /// call, as written on the wire.
 #[derive(Serialize, Deserialize)]
-pub struct MethodAndArgs {
-    // TODO
-}
+pub struct MethodArgs(pub Vec<u8>);
 
 enum InnerServiceRef<T: RustyRpcServiceClient + ?Sized> {
     RemoteServiceRef(T::ServiceProxy),
