@@ -1,8 +1,10 @@
 pub mod internal_for_macro;
 
 pub use messages::ServiceRef;
-use traits::ClientStreamSink;
-pub use traits::{RustyRpcServiceClient, RustyRpcServiceProxy, RustyRpcServiceServer};
+pub use traits::{
+    RustyRpcServiceClient, RustyRpcServiceProxy, RustyRpcServiceServer,
+    RustyRpcServiceServerWithKnownClientType,
+};
 
 mod messages;
 mod service_collection;
@@ -19,12 +21,10 @@ use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
-use messages::{service_ref_from_service_proxy, ClientMessage, ServerMessage};
+use messages::{service_ref_from_service_proxy, ClientMessage, ServerMessage, ServiceId};
 use service_collection::ServiceCollection;
-use util::string_io_error;
-
-use crate::messages::ServiceId;
-use crate::util::other_io_error;
+use traits::ClientStreamSink;
+use util::{other_io_error, string_io_error};
 
 /// Starts a server, accepting new connections in an infinite loop.
 ///

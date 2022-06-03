@@ -1,9 +1,11 @@
-use std::ops::Deref;
+use std::{marker::PhantomData, ops::Deref};
 
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 
-use crate::RustyRpcServiceClient;
+use crate::{
+    traits::RustyRpcServiceServerWithKnownClientType, RustyRpcServiceClient, RustyRpcServiceServer,
+};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ServiceId(pub u64);
@@ -71,7 +73,7 @@ pub struct MethodArgs(pub Vec<u8>);
 
 enum InnerServiceRef<T: RustyRpcServiceClient + ?Sized> {
     RemoteServiceRef(T::ServiceProxy),
-    OwnedLocalService(Box<T>),
+    OwnedLocalService(Box<dyn RustyRpcServiceServer>, PhantomData<T>),
 }
 
 /// Either an owned server-side service, or a client's reference to such a
@@ -91,8 +93,11 @@ pub struct ServiceRef<T: RustyRpcServiceClient + ?Sized>(
 );
 impl<T: RustyRpcServiceClient + ?Sized> ServiceRef<T> {
     /// Used on the server side.
-    pub fn new(inner: Box<T>) -> Self {
-        ServiceRef(InnerServiceRef::OwnedLocalService(inner))
+    pub fn new<S: RustyRpcServiceServerWithKnownClientType<ClientType = T>>(inner: S) -> Self {
+        ServiceRef(InnerServiceRef::OwnedLocalService(
+            Box::new(inner),
+            PhantomData,
+        ))
     }
 }
 /// Used only on the client side.
@@ -101,15 +106,26 @@ impl<T: RustyRpcServiceClient + ?Sized> Deref for ServiceRef<T> {
     fn deref(&self) -> &T::ServiceProxy {
         match &self.0 {
             InnerServiceRef::RemoteServiceRef(x) => x,
-            InnerServiceRef::OwnedLocalService(_) => {
+            InnerServiceRef::OwnedLocalService(..) => {
                 panic!("Tried to dereference a ServiceRef on server side.")
             }
         }
     }
 }
 
+/// For macro and internal use only.
 pub fn service_ref_from_service_proxy<T: RustyRpcServiceClient + ?Sized>(
     service_proxy: T::ServiceProxy,
 ) -> ServiceRef<T> {
     ServiceRef(InnerServiceRef::RemoteServiceRef(service_proxy))
+}
+
+/// For macro use only.
+pub fn local_service_from_service_ref<T: RustyRpcServiceClient + ?Sized>(
+    service_ref: ServiceRef<T>,
+) -> Option<Box<dyn RustyRpcServiceServer>> {
+    match service_ref.0 {
+        InnerServiceRef::RemoteServiceRef(_) => None,
+        InnerServiceRef::OwnedLocalService(x, _) => Some(x),
+    }
 }

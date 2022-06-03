@@ -90,19 +90,22 @@ pub fn service_server_impl(
         #[#internal::async_trait]
         #original_input
 
+        impl #internal::RustyRpcServiceServerWithKnownClientType for #service_type_name {
+            type ClientType = dyn #service_trait_name;
+        }
         #[#internal::async_trait]
         impl #internal::RustyRpcServiceServer for #service_type_name {
             async fn parse_and_call_method_locally(
                 &mut self,
                 method_id: #internal::MethodId,
                 method_args: #internal::MethodArgs,
-                connection: &mut #internal::ServiceCollection,
+                service_collection: &mut #internal::ServiceCollection,
             ) -> ::std::io::Result<#internal::ServerMessage> {
                 <#service_type_name as #service_trait_name>::_rusty_rpc_forward__parse_and_call_method_locally(
                     self,
                     method_id,
                     method_args,
-                    connection
+                    service_collection
                 ).await
             }
         }
@@ -172,14 +175,30 @@ fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream
                     .iter()
                     .map(|x| to_syn_ident(&x.0))
                     .collect();
-                let code_to_parse_return_type = match method_type.return_type {
-                    ReturnType::ServiceRef(_) => quote! { todo!("Parse returned service ID") },
+                let code_to_parse_return_type = match &method_type.return_type {
+                    ReturnType::ServiceRef(returned_service_name) => {
+                        let returned_service_name = to_syn_ident(&returned_service_name);
+                        let returned_proxy_name = format_ident!("{}_RustyRpcServiceProxy", returned_service_name);
+                        quote! {
+                            match raw_return_value {
+                                #internal::ReturnValue::Data(_) => panic!(
+                                    "Server returned data instead of service."),
+                                #internal::ReturnValue::Service(service_id) => {
+                                    let proxy = <#returned_proxy_name as #internal::RustyRpcServiceProxy>::from_service_id(
+                                        service_id,
+                                        self.stream_sink.clone()
+                                    );
+                                    #internal::service_ref_from_service_proxy(proxy)
+                                },
+                            }
+                        }
+                    },
                     ReturnType::Data(_) => quote! {
                         match raw_return_value {
                             #internal::ReturnValue::Data(bytes) =>
                                 #internal::rmp_serde::from_slice(&bytes)
                                 .expect("Server sent malformed return value"),
-                            #internal::ReturnValue::Service(bytes) => panic!(
+                            #internal::ReturnValue::Service(_) => panic!(
                                 "Server returned service instead of data.")
                         }
                     },
@@ -231,11 +250,20 @@ fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream
                 .map(|x| data_type_to_token_stream(&x.1))
                 .collect();
             let code_to_serialize_return_type = match method_type.return_type {
-                    ReturnType::ServiceRef(_) => quote! { todo!("Serialized returned service as ID") },
+                    ReturnType::ServiceRef(_) => quote! {
+                        {
+                            let local_service = #internal::local_service_from_service_ref(return_value)
+                                .expect("Server somehow returned a remote ServiceRef.");
+                            let service_id = service_collection.register_service(local_service as ::std::boxed::Box<_>);
+                            #internal::ReturnValue::Service(service_id)
+                        }
+                    },
                     ReturnType::Data(_) => quote! {
                         {
-                            #internal::rmp_serde::to_vec(&return_value)
-                                .expect("Serializing return value somehow failed.")
+                            #internal::ReturnValue::Data(
+                                #internal::rmp_serde::to_vec(&return_value)
+                                    .expect("Serializing return value somehow failed.")
+                            )
                         }
                     },
                 };
@@ -248,9 +276,7 @@ fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream
                     let return_value = self.#method_name(#(#param_names),*).await
                         .expect("Server implementation of service method failed.");
                     let serialized_return_value = #code_to_serialize_return_type;
-                    let msg_to_send = #internal::ServerMessage::MethodReturned(
-                        #internal::ReturnValue::Data(serialized_return_value)
-                    );
+                    let msg_to_send = #internal::ServerMessage::MethodReturned(serialized_return_value);
                     ::std::result::Result::Ok(msg_to_send)
                 } else
             }
@@ -266,7 +292,7 @@ fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream
                 &mut self,
                 method_id: #internal::MethodId,
                 method_args: #internal::MethodArgs,
-                connection: &mut #internal::ServiceCollection,
+                service_collection: &mut #internal::ServiceCollection,
             ) -> ::std::io::Result<#internal::ServerMessage> {
                 #(#parse_and_call_method_locally_impl_branches)*
                 {

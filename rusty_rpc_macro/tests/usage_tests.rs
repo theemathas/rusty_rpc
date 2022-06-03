@@ -27,7 +27,7 @@ async fn test_types() {
                 unimplemented!()
             }
             async fn baz(&self) -> io::Result<ServiceRef<dyn MyService>> {
-                Ok(ServiceRef::new(unimplemented!() as Box<dyn MyService>))
+                Ok(ServiceRef::new(DummyService))
             }
         }
 
@@ -81,6 +81,23 @@ async fn simple_usage() {
             })
         }
         async fn baz(&self) -> io::Result<ServiceRef<dyn MyService>> {
+            Ok(ServiceRef::new(ConstService(9999)))
+        }
+    }
+
+    struct ConstService(i32);
+    #[service_server_impl]
+    impl MyService for ConstService {
+        async fn foo(&self) -> io::Result<i32> {
+            Ok(self.0)
+        }
+        async fn bar(&self, _arg: i32) -> io::Result<i32> {
+            unimplemented!()
+        }
+        async fn bar2(&self, _arg1: i32, _arg2: Foo) -> io::Result<Foo> {
+            unimplemented!()
+        }
+        async fn baz(&self) -> io::Result<ServiceRef<dyn MyService>> {
             unimplemented!()
         }
     }
@@ -97,8 +114,10 @@ async fn simple_usage() {
 
         let foo_output = service.foo().await.unwrap();
         assert_eq!(123, foo_output);
+
         let bar_output = service.bar(2).await.unwrap();
         assert_eq!(2, bar_output);
+
         let bar2_output = service
             .bar2(
                 900,
@@ -111,6 +130,11 @@ async fn simple_usage() {
             .unwrap();
         assert_eq!(987, bar2_output.x);
         assert_eq!(987, bar2_output.y.z);
+
+        let baz_output_service = service.baz().await.unwrap();
+        let baz_foo_output = baz_output_service.foo().await.unwrap();
+        assert_eq!(9999, baz_foo_output);
+        baz_output_service.close().await.unwrap();
 
         service.close().await.unwrap();
     });

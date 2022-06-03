@@ -58,6 +58,14 @@ impl<
 {
 }
 
+/// Used for type safety in the `new()` method of [crate::messages::ServiceRef].
+/// Like [RustyRpcServiceServer], it is also automatically implemented for user
+/// types.
+pub trait RustyRpcServiceServerWithKnownClientType: RustyRpcServiceServer {
+    #[doc(hidden)]
+    type ClientType: RustyRpcServiceClient + ?Sized;
+}
+
 /// This trait will be automatically implemented by any user type marked with
 /// the `#[service_server_impl]` attribute in the `rusty_rpc_macro` crate. Users
 /// should not manually implement this trait.
@@ -74,7 +82,7 @@ pub trait RustyRpcServiceServer: Send + Sync + 'static {
         &mut self,
         method_id: MethodId,
         method_args: MethodArgs,
-        connection: &mut ServiceCollection,
+        service_collection: &mut ServiceCollection,
     ) -> io::Result<ServerMessage>;
 }
 
