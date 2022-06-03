@@ -24,15 +24,14 @@ pub struct Service {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Method {
-    // TODO currently only &self for now. Add &mut self.
+    // Currently only &mut self. &self is not supported.
     pub non_self_params: Vec<(Identifier, DataType)>,
     pub return_type: ReturnType,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ReturnType {
-    // TODO maybe add ServiceMut
-    ServiceRef(Identifier),
+    ServiceRefMut(Identifier),
     Data(DataType),
 }
 

@@ -15,18 +15,18 @@ struct-definition := "struct" identifier "{" struct-field * "}"
 struct-field := identifier ":" type ","
 
 service-definition := "service" identifier "{" service-method * "}"
-// TODO add &mut self
+// Currently, `&self` is not supported.
 service-method := identifier "(" ( "&" "self" ) ( "," identifier ":" type )* ")" "->" type ";"
 
-// TODO add "&mut"
-return-type := "&" service-type | data-type
+// Currently, `&Service` is not supported.
+return-type := "&" "mut" service-type | data-type
 data-type := "i32" | struct-type
 struct-type := identifier
 
 identifier := A string that starts with an alphanumberic character followed by zero or more alphanumberic characters and/or underscores. Except that it must not match a reserved word.
 
 Reserved word list: "struct", "service", "self", "mut", "crate", "super", "Self".
-Note: "crate", "super" and "Self" are otherwise in the grammar, but are reserved because Rust identifiers cannot be these keywords,
+Note: "crate", "super" and "Self" aren't otherwise in the grammar, but are reserved because Rust identifiers cannot be these keywords,
 even when using raw identifiers. See https://doc.rust-lang.org/1.60.0/reference/identifiers.html
 */
 
@@ -196,6 +196,8 @@ fn parse_method(input: &[u8]) -> IResult<&[u8], (Identifier, Method)> {
             multispace0,
             tag("&"),
             multispace0,
+            tag("mut"),
+            multispace1,
             tag("self"),
             many0_padded_by_multispace(parse_parameter),
             tag(")"),
@@ -206,7 +208,7 @@ fn parse_method(input: &[u8]) -> IResult<&[u8], (Identifier, Method)> {
             multispace0,
             tag(";"),
         )),
-        |(method_name, _, _, _, _, _, _, non_self_params, _, _, _, _, return_type, _, _)| {
+        |(method_name, _, _, _, _, _, _, _, _, non_self_params, _, _, _, _, return_type, _, _)| {
             (
                 method_name,
                 Method {
@@ -223,11 +225,13 @@ fn parse_return_type(input: &[u8]) -> IResult<&[u8], ReturnType> {
         tuple((
             tag("&"),
             multispace0,
+            tag("mut"),
+            multispace1,
             tag("service"),
             multispace1,
             parse_identifier,
         )),
-        |(_, _, _, _, x)| ReturnType::ServiceRef(x),
+        |(_, _, _, _, _, _, x)| ReturnType::ServiceRefMut(x),
     );
     alt((parse_service_type, parse_data_type.map(ReturnType::Data)))(input)
 }
@@ -280,9 +284,9 @@ mod tests {
             }
 
             service MyService {
-                foo ( & self ) -> i32 ;
-                bar ( & self , arg1 : i32 , arg2 : Foo ) -> Foo ;
-                baz ( & self ) -> & service MyService ;
+                foo ( & mut self ) -> i32 ;
+                bar ( & mut self , arg1 : i32 , arg2 : Foo ) -> Foo ;
+                baz ( & mut self ) -> & mut service MyService ;
             }
         "#;
         let ident = |s: &str| Identifier(s.to_string());
@@ -322,7 +326,7 @@ mod tests {
                             ident("baz"),
                             Method {
                                 non_self_params: vec![],
-                                return_type: ReturnType::ServiceRef(ident("MyService")),
+                                return_type: ReturnType::ServiceRefMut(ident("MyService")),
                             },
                         ),
                     ]),

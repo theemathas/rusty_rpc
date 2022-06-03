@@ -1,6 +1,6 @@
 pub mod internal_for_macro;
 
-pub use messages::ServiceRef;
+pub use messages::ServiceRefMut;
 pub use traits::{
     RustyRpcServiceClient, RustyRpcServiceProxy, RustyRpcServiceServer,
     RustyRpcServiceServerWithKnownClientType,
@@ -109,7 +109,7 @@ pub async fn start_client<
     RW: AsyncRead + AsyncWrite + 'static + Send + Unpin,
 >(
     read_write: RW,
-) -> ServiceRef<T> {
+) -> ServiceRefMut<T> {
     let initial_service_id = ServiceId(0);
     let bytes_stream_sink = Framed::new(read_write, LengthDelimitedCodec::new());
     let client_stream_sink = bytes_stream_sink

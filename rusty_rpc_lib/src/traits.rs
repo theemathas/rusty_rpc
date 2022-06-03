@@ -22,7 +22,7 @@ pub trait RustyRpcServiceClient {
     /// A proxy that client uses to reference such a service. This proxy type
     /// will implement the service trait (e.g. MyService).
     ///
-    /// When the ServiceRef for a certain service is closed on the client
+    /// When the ServiceRefMut for a certain service is closed on the client
     /// side, the associated resources, are dropped on the server side. If the
     /// type `T` is an implementation of a certain service, then `Response<T>`
     /// will implement the corresponding service trait.
@@ -58,7 +58,7 @@ impl<
 {
 }
 
-/// Used for type safety in the `new()` method of [crate::messages::ServiceRef].
+/// Used for type safety in the `new()` method of [crate::messages::ServiceRefMut].
 /// Like [RustyRpcServiceServer], it is also automatically implemented for user
 /// types.
 pub trait RustyRpcServiceServerWithKnownClientType: RustyRpcServiceServer {
@@ -70,7 +70,7 @@ pub trait RustyRpcServiceServerWithKnownClientType: RustyRpcServiceServer {
 /// the `#[service_server_impl]` attribute in the `rusty_rpc_macro` crate. Users
 /// should not manually implement this trait.
 ///
-/// Client-side access to services (via [RustyRpcServiceClient::ServiceRef]) CANNOT
+/// Client-side access to services (via [RustyRpcServiceClient::ServiceRefMut]) CANNOT
 /// use this trait.
 ///
 /// For some reason the Send + Sync + 'static bound is needed for

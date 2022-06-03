@@ -1,6 +1,6 @@
 use std::io;
 
-use rusty_rpc_lib::{start_client, start_server, RustyRpcServiceClient, ServiceRef};
+use rusty_rpc_lib::{start_client, start_server, RustyRpcServiceClient, ServiceRefMut};
 use rusty_rpc_macro::{interface_file, service_server_impl};
 use tokio::net::{TcpListener, TcpSocket};
 
@@ -17,21 +17,21 @@ async fn test_types() {
         struct DummyService;
         #[service_server_impl]
         impl MyService for DummyService {
-            async fn foo(&self) -> io::Result<i32> {
+            async fn foo(&mut self) -> io::Result<i32> {
                 Ok(123)
             }
-            async fn bar(&self, _a: i32) -> io::Result<i32> {
+            async fn bar(&mut self, _a: i32) -> io::Result<i32> {
                 unimplemented!()
             }
-            async fn bar2(&self, _a: i32, _b: Foo) -> io::Result<Foo> {
+            async fn bar2(&mut self, _a: i32, _b: Foo) -> io::Result<Foo> {
                 unimplemented!()
             }
-            async fn baz(&self) -> io::Result<ServiceRef<dyn MyService>> {
-                Ok(ServiceRef::new(DummyService))
+            async fn baz(&mut self) -> io::Result<ServiceRefMut<dyn MyService>> {
+                Ok(ServiceRefMut::new(DummyService))
             }
         }
 
-        let service = DummyService;
+        let mut service = DummyService;
         let _: i32 = service.bar(3).await.unwrap();
         let _: Foo = service.bar2(3, foo.clone()).await.unwrap();
 
@@ -67,37 +67,37 @@ async fn simple_usage() {
     struct DummyService;
     #[service_server_impl]
     impl MyService for DummyService {
-        async fn foo(&self) -> io::Result<i32> {
+        async fn foo(&mut self) -> io::Result<i32> {
             Ok(123)
         }
-        async fn bar(&self, arg: i32) -> io::Result<i32> {
+        async fn bar(&mut self, arg: i32) -> io::Result<i32> {
             Ok(arg)
         }
-        async fn bar2(&self, arg1: i32, arg2: Foo) -> io::Result<Foo> {
+        async fn bar2(&mut self, arg1: i32, arg2: Foo) -> io::Result<Foo> {
             let val = arg1 + arg2.x + arg2.y.z;
             Ok(Foo {
                 x: val,
                 y: Bar { z: val },
             })
         }
-        async fn baz(&self) -> io::Result<ServiceRef<dyn MyService>> {
-            Ok(ServiceRef::new(ConstService(9999)))
+        async fn baz(&mut self) -> io::Result<ServiceRefMut<dyn MyService>> {
+            Ok(ServiceRefMut::new(ConstService(9999)))
         }
     }
 
     struct ConstService(i32);
     #[service_server_impl]
     impl MyService for ConstService {
-        async fn foo(&self) -> io::Result<i32> {
+        async fn foo(&mut self) -> io::Result<i32> {
             Ok(self.0)
         }
-        async fn bar(&self, _arg: i32) -> io::Result<i32> {
+        async fn bar(&mut self, _arg: i32) -> io::Result<i32> {
             unimplemented!()
         }
-        async fn bar2(&self, _arg1: i32, _arg2: Foo) -> io::Result<Foo> {
+        async fn bar2(&mut self, _arg1: i32, _arg2: Foo) -> io::Result<Foo> {
             unimplemented!()
         }
-        async fn baz(&self) -> io::Result<ServiceRef<dyn MyService>> {
+        async fn baz(&mut self) -> io::Result<ServiceRefMut<dyn MyService>> {
             unimplemented!()
         }
     }
@@ -110,7 +110,7 @@ async fn simple_usage() {
 
     let client_handle = tokio::spawn(async move {
         let stream = TcpSocket::new_v4().unwrap().connect(addr).await.unwrap();
-        let service = start_client::<dyn MyService, _>(stream).await;
+        let mut service = start_client::<dyn MyService, _>(stream).await;
 
         let foo_output = service.foo().await.unwrap();
         assert_eq!(123, foo_output);
@@ -131,7 +131,7 @@ async fn simple_usage() {
         assert_eq!(987, bar2_output.x);
         assert_eq!(987, bar2_output.y.z);
 
-        let baz_output_service = service.baz().await.unwrap();
+        let mut baz_output_service = service.baz().await.unwrap();
         let baz_foo_output = baz_output_service.foo().await.unwrap();
         assert_eq!(9999, baz_foo_output);
         baz_output_service.close().await.unwrap();

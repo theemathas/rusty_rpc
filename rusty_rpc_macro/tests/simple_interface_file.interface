@@ -8,8 +8,8 @@ struct Bar {
 }
 
 service MyService {
-    foo(&self) -> i32;
-    bar(&self, arg: i32) -> i32 ;
-    bar2(&self, arg1: i32, arg2: Foo) -> Foo ;
-    baz(&self) -> &service MyService ;
+    foo(&mut self) -> i32;
+    bar(&mut self, arg: i32) -> i32 ;
+    bar2(&mut self, arg1: i32, arg2: Foo) -> Foo ;
+    baz(&mut self) -> &mut service MyService ;
 }

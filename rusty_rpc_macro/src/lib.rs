@@ -159,7 +159,7 @@ fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream
 
             // Without the semicolon or {}
             quote! {
-                async fn #method_name(&self, #(#non_self_params),*) -> #return_type
+                async fn #method_name(&mut self, #(#non_self_params),*) -> #return_type
             }
         })
         .collect();
@@ -176,7 +176,7 @@ fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream
                     .map(|x| to_syn_ident(&x.0))
                     .collect();
                 let code_to_parse_return_type = match &method_type.return_type {
-                    ReturnType::ServiceRef(returned_service_name) => {
+                    ReturnType::ServiceRefMut(returned_service_name) => {
                         let returned_service_name = to_syn_ident(&returned_service_name);
                         let returned_proxy_name = format_ident!("{}_RustyRpcServiceProxy", returned_service_name);
                         quote! {
@@ -250,10 +250,10 @@ fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream
                 .map(|x| data_type_to_token_stream(&x.1))
                 .collect();
             let code_to_serialize_return_type = match method_type.return_type {
-                    ReturnType::ServiceRef(_) => quote! {
+                    ReturnType::ServiceRefMut(_) => quote! {
                         {
                             let local_service = #internal::local_service_from_service_ref(return_value)
-                                .expect("Server somehow returned a remote ServiceRef.");
+                                .expect("Server somehow returned a remote ServiceRefMut.");
                             let service_id = service_collection.register_service(local_service as ::std::boxed::Box<_>);
                             #internal::ReturnValue::Service(service_id)
                         }
@@ -325,7 +325,7 @@ fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream
         }
         impl #service_proxy_name {
             /// This method should be called only once before it is dropped.
-            async fn close(&self) -> ::std::io::Result<()> {
+            async fn close(&mut self) -> ::std::io::Result<()> {
                 let Self { service_id, stream_sink, is_closed } = self;
                 let ordering = ::std::sync::atomic::Ordering::SeqCst;
                 is_closed.compare_exchange(false, true, ordering, ordering).map_err(|_| #internal::string_io_error(
@@ -382,10 +382,10 @@ fn data_type_to_token_stream(type_: &DataType) -> TokenStream {
 
 fn return_type_to_token_stream(type_: &ReturnType) -> TokenStream {
     let inner_return_type = match type_ {
-        ReturnType::ServiceRef(x) => {
+        ReturnType::ServiceRefMut(x) => {
             let internal = quote! { ::rusty_rpc_lib::internal_for_macro };
             let temp = to_syn_ident(x);
-            quote! { #internal::ServiceRef<dyn #temp> }
+            quote! { #internal::ServiceRefMut<dyn #temp> }
         }
         ReturnType::Data(x) => data_type_to_token_stream(x),
     };
