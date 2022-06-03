@@ -16,7 +16,7 @@ struct-field := identifier ":" type ","
 
 service-definition := "service" identifier "{" service-method * "}"
 // TODO add &mut self
-service-method := identifier ":" ( "&" "self" ) ( "," identifier ":" type )* "->" type ";"
+service-method := identifier "(" ( "&" "self" ) ( "," identifier ":" type )* ")" "->" type ";"
 
 // TODO add "&mut"
 return-type := "&" service-type | data-type
@@ -192,19 +192,21 @@ fn parse_method(input: &[u8]) -> IResult<&[u8], (Identifier, Method)> {
         tuple((
             parse_identifier,
             multispace0,
-            tag(":"),
+            tag("("),
             multispace0,
             tag("&"),
             multispace0,
             tag("self"),
             many0_padded_by_multispace(parse_parameter),
+            tag(")"),
+            multispace0,
             tag("->"),
             multispace0,
             parse_return_type,
             multispace0,
             tag(";"),
         )),
-        |(method_name, _, _, _, _, _, _, non_self_params, _, _, return_type, _, _)| {
+        |(method_name, _, _, _, _, _, _, non_self_params, _, _, _, _, return_type, _, _)| {
             (
                 method_name,
                 Method {
@@ -278,9 +280,9 @@ mod tests {
             }
 
             service MyService {
-                foo : & self -> i32 ;
-                bar : & self , arg1 : i32 , arg2 : Foo -> Foo ;
-                baz : & self -> & service MyService ;
+                foo ( & self ) -> i32 ;
+                bar ( & self , arg1 : i32 , arg2 : Foo ) -> Foo ;
+                baz ( & self ) -> & service MyService ;
             }
         "#;
         let ident = |s: &str| Identifier(s.to_string());
