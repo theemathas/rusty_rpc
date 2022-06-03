@@ -1,7 +1,6 @@
-use std::{
-    collections::{hash_map::Entry, HashMap},
-    sync::{Arc, Mutex},
-};
+use std::collections::{hash_map::Entry, HashMap};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 use crate::{messages::ServiceId, traits::RustyRpcServiceServer};
 

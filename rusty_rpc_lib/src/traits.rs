@@ -1,6 +1,7 @@
 use std::io;
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use futures::{Sink, Stream};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -66,9 +67,10 @@ impl<
 ///
 /// For some reason the Send + Sync + 'static bound is needed for
 /// `tokio::spawn`.
+#[async_trait]
 pub trait RustyRpcServiceServer: Send + Sync + 'static {
     #[doc(hidden)]
-    fn parse_and_call_method_locally(
+    async fn parse_and_call_method_locally(
         &mut self,
         method_id: MethodId,
         method_args: MethodArgs,

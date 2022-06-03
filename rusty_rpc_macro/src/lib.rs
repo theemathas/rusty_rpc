@@ -90,8 +90,9 @@ pub fn service_server_impl(
         #[#internal::async_trait]
         #original_input
 
+        #[#internal::async_trait]
         impl #internal::RustyRpcServiceServer for #service_type_name {
-            fn parse_and_call_method_locally(
+            async fn parse_and_call_method_locally(
                 &mut self,
                 method_id: #internal::MethodId,
                 method_args: #internal::MethodArgs,
@@ -102,7 +103,7 @@ pub fn service_server_impl(
                     method_id,
                     method_args,
                     connection
-                )
+                ).await
             }
         }
     }
@@ -166,10 +167,10 @@ fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream
         .enumerate()
         .map(
             |(method_id, (method_header, (_method_name, method_type)))| {
-                let param_names: Vec<&str> = method_type
+                let param_names: Vec<syn::Ident> = method_type
                     .non_self_params
                     .iter()
-                    .map(|x| &*x.0 .0)
+                    .map(|x| to_syn_ident(&x.0))
                     .collect();
                 let code_to_parse_return_type = match method_type.return_type {
                     ReturnType::ServiceRef(_) => quote! { todo!("Parse returned service ID") },
@@ -212,19 +213,66 @@ fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream
             },
         )
         .collect();
+    
+    let parse_and_call_method_locally_impl_branches: Vec<TokenStream> = service
+        .methods
+        .iter()
+        .enumerate()
+        .map(|(method_id, (method_name, method_type))| {
+            let method_name = to_syn_ident(&method_name);
+            let param_names: Vec<syn::Ident> = method_type
+                .non_self_params
+                .iter()
+                .map(|x| to_syn_ident(&x.0))
+                .collect();
+            let param_types: Vec<TokenStream> = method_type
+                .non_self_params
+                .iter()
+                .map(|x| data_type_to_token_stream(&x.1))
+                .collect();
+            let code_to_serialize_return_type = match method_type.return_type {
+                    ReturnType::ServiceRef(_) => quote! { todo!("Serialized returned service as ID") },
+                    ReturnType::Data(_) => quote! {
+                        {
+                            #internal::rmp_serde::to_vec(&return_value)
+                                .expect("Serializing return value somehow failed.")
+                        }
+                    },
+                };
 
+            quote! {
+                if method_id.0 == #method_id as u64 {
+                    let (#(#param_names),*) : (#(#param_types),*) =
+                        #internal::rmp_serde::from_slice(&method_args.0)
+                        .expect("Client sent malformed arguments.");
+                    let return_value = self.#method_name(#(#param_names),*).await
+                        .expect("Server implementation of service method failed.");
+                    let serialized_return_value = #code_to_serialize_return_type;
+                    let msg_to_send = #internal::ServerMessage::MethodReturned(
+                        #internal::ReturnValue::Data(serialized_return_value)
+                    );
+                    ::std::result::Result::Ok(msg_to_send)
+                } else
+            }
+        })
+        .collect();
+    
     quote! {
         #[#internal::async_trait]
-        pub trait #service_name: Send {
+        pub trait #service_name: Send + Sync {
             /// This method should be automatically implemented by using the `#[service_server_impl]` macro
             #[doc(hidden)]
-            fn _rusty_rpc_forward__parse_and_call_method_locally(
+            async fn _rusty_rpc_forward__parse_and_call_method_locally(
                 &mut self,
                 method_id: #internal::MethodId,
                 method_args: #internal::MethodArgs,
                 connection: &mut #internal::ServiceCollection,
             ) -> ::std::io::Result<#internal::ServerMessage> {
-                todo!()
+                #(#parse_and_call_method_locally_impl_branches)*
+                {
+                    // Final else branch
+                    panic!("Client sent invalid method_id.")
+                }
             }
 
             #(

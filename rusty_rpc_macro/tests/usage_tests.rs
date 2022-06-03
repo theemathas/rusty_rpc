@@ -57,8 +57,6 @@ async fn test_types() {
     }
 }
 
-// TODO remove this ignore.
-#[ignore]
 #[tokio::test]
 async fn simple_usage() {
     #[derive(Default)]
