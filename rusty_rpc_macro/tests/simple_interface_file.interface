@@ -9,6 +9,7 @@ struct Bar {
 
 service MyService {
     foo(&self) -> i32;
-    bar(&self, arg1: i32, arg2: Foo) -> Foo ;
+    bar(&self, arg: i32) -> i32 ;
+    bar2(&self, arg1: i32, arg2: Foo) -> Foo ;
     baz(&self) -> &service MyService ;
 }

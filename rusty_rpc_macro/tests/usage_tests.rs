@@ -20,7 +20,10 @@ async fn test_types() {
             async fn foo(&self) -> io::Result<i32> {
                 Ok(123)
             }
-            async fn bar(&self, _a: i32, _b: Foo) -> io::Result<Foo> {
+            async fn bar(&self, _a: i32) -> io::Result<i32> {
+                unimplemented!()
+            }
+            async fn bar2(&self, _a: i32, _b: Foo) -> io::Result<Foo> {
                 unimplemented!()
             }
             async fn baz(&self) -> io::Result<ServiceRef<dyn MyService>> {
@@ -29,7 +32,8 @@ async fn test_types() {
         }
 
         let service = DummyService;
-        let _: Foo = service.bar(3, foo.clone()).await.unwrap();
+        let _: i32 = service.bar(3).await.unwrap();
+        let _: Foo = service.bar2(3, foo.clone()).await.unwrap();
 
         // Test that types have the right traits.
         fn need_rpc_struct(_: impl rusty_rpc_lib::internal_for_macro::RustyRpcStruct) {}
@@ -66,8 +70,15 @@ async fn simple_usage() {
         async fn foo(&self) -> io::Result<i32> {
             Ok(123)
         }
-        async fn bar(&self, _a: i32, _b: Foo) -> io::Result<Foo> {
-            unimplemented!()
+        async fn bar(&self, arg: i32) -> io::Result<i32> {
+            Ok(arg)
+        }
+        async fn bar2(&self, arg1: i32, arg2: Foo) -> io::Result<Foo> {
+            let val = arg1 + arg2.x + arg2.y.z;
+            Ok(Foo {
+                x: val,
+                y: Bar { z: val },
+            })
         }
         async fn baz(&self) -> io::Result<ServiceRef<dyn MyService>> {
             unimplemented!()
@@ -79,13 +90,31 @@ async fn simple_usage() {
     let addr = listener.local_addr().unwrap();
     let server_handle =
         tokio::spawn(async { start_server::<DummyService>(listener).await.unwrap() });
+
     let client_handle = tokio::spawn(async move {
         let stream = TcpSocket::new_v4().unwrap().connect(addr).await.unwrap();
         let service = start_client::<dyn MyService, _>(stream).await;
+
         let foo_output = service.foo().await.unwrap();
         assert_eq!(123, foo_output);
+        let bar_output = service.bar(2).await.unwrap();
+        assert_eq!(2, bar_output);
+        let bar2_output = service
+            .bar2(
+                900,
+                Foo {
+                    x: 80,
+                    y: Bar { z: 7 },
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(987, bar2_output.x);
+        assert_eq!(987, bar2_output.y.z);
+
         service.close().await.unwrap();
     });
+
     client_handle.await.expect("Client crashed.");
     server_handle.abort();
     let server_error = server_handle
