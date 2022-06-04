@@ -13,6 +13,14 @@ path = "src/hello_world/client.rs"
 name = "hello_world_server"
 path = "src/hello_world/server.rs"
 
+[[bin]]
+name = "parent_child_client"
+path = "src/parent_child/client.rs"
+
+[[bin]]
+name = "parent_child_server"
+path = "src/parent_child/server.rs"
+
 [dependencies]
 tokio = { version = "1.18.2", features = ["macros", "rt", "rt-multi-thread"] }
 serde = "1.0.137"

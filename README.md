@@ -6,8 +6,12 @@ An RPC implemented for the Rust programming language and designed to better use 
 
 TODO: Write some more stuff here.
 
-For usage examples, see the `examples` directory. To run the `hello_world`
-example, run `cargo run --bin hello_world_server`. Then, in another terminal,
-you may run `cargo run --bin hello_world_client` any number of times. The client
-will run, verify that it worked properly, print `Client done successfully!`,
-then terminate. You'll need to manually terminate the server with ctrl-C.
+For usage examples, see the `examples` directory. I recommend looking in the order: `hello_world`, then `parent_child`.
+
+To run the `hello_world` example, run `cargo run --bin hello_world_server`.
+Then, in another terminal, you may run `cargo run --bin hello_world_client` any
+number of times. The client will run, verify that it worked properly, print
+`Client done successfully!`, then terminate. You'll need to manually terminate
+the server with ctrl-C.
+
+Follow similar steps for the `parent_child` example.

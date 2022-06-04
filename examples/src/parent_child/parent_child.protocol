@@ -1,0 +1,8 @@
+service ParentService {
+    child(&mut self) -> &mut service ChildService;
+    get(&mut self) -> i32;
+}
+
+service ChildService {
+    set(&mut self, new_value: i32) -> i32;
+}
