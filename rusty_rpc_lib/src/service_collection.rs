@@ -36,7 +36,7 @@ pub struct ServerEntry {
     parent_guard: Option<ServerGuard>,
 }
 impl ServerEntry {
-    pub unsafe fn server<'a>(&'a mut self) -> &'a mut dyn RustyRpcServiceServer<'a> {
+    pub unsafe fn server(&mut self) -> &mut dyn RustyRpcServiceServer<'_> {
         &mut *self.server_
     }
 }
@@ -72,7 +72,7 @@ impl ServiceCollection {
 
     /// Add a service to the collection, and return its ID.
     #[must_use]
-    pub unsafe fn register_service<'a: 'parent, 'parent: 'service, 'service>(
+    pub unsafe fn register_service<'a: 'service, 'service>(
         &'a self,
         service: Box<dyn RustyRpcServiceServer<'service>>,
         parent_guard: Option<ServerGuard>,
@@ -115,7 +115,7 @@ impl ServiceCollection {
         locked.remove(&service_id)
     }
 
-    pub(crate) fn get_service_entry_arc<'a>(
+    pub(crate) fn get_service_entry_arc(
         &self,
         service_id: ServiceId,
     ) -> Option<Arc<Mutex<ServerEntry>>> {

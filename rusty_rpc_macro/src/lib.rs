@@ -197,7 +197,7 @@ fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream
                     .collect();
                 let code_to_parse_return_type = match &method_type.return_type {
                     ReturnType::ServiceRefMut(returned_service_name) => {
-                        let returned_service_name = to_syn_ident(&returned_service_name);
+                        let returned_service_name = to_syn_ident(returned_service_name);
                         let returned_proxy_name = format_ident!("{}_RustyRpcServiceProxy", returned_service_name);
                         quote! {
                             match raw_return_value {
@@ -258,7 +258,7 @@ fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream
         .iter()
         .enumerate()
         .map(|(method_id, (method_name, method_type))| {
-            let method_name = to_syn_ident(&method_name);
+            let method_name = to_syn_ident(method_name);
             let param_names: Vec<syn::Ident> = method_type
                 .non_self_params
                 .iter()
