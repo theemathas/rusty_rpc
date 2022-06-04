@@ -1,0 +1,14 @@
+struct Foo {
+    x: i32,
+    y: Bar,
+}
+
+struct Bar {
+    z: i32,
+}
+
+service MyService {
+    foo(&mut self) -> i32;
+    bar(&mut self, arg: i32) -> i32;
+    baz(&mut self, arg1: i32, arg2: Foo) -> Foo;
+}

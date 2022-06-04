@@ -1,0 +1,21 @@
+[package]
+name = "examples"
+version = "0.0.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[[bin]]
+name = "hello_world_client"
+path = "src/hello_world/client.rs"
+
+[[bin]]
+name = "hello_world_server"
+path = "src/hello_world/server.rs"
+
+[dependencies]
+tokio = { version = "1.18.2", features = ["macros", "rt", "rt-multi-thread"] }
+serde = "1.0.137"
+
+rusty_rpc_lib = { path = "../rusty_rpc_lib" }
+rusty_rpc_macro = { path = "../rusty_rpc_macro" }
