@@ -1,0 +1,7 @@
+service TreeService {
+    root(&mut self) -> &mut service NodeService;
+}
+service NodeService {
+    nth_child(&mut self, id: i32) -> &mut service NodeService;
+    get_value(&mut self) -> i32;
+}
