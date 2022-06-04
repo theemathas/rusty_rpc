@@ -12,17 +12,18 @@ mod traits;
 mod util;
 
 use std::io;
+use std::mem::transmute;
 use std::sync::Arc;
 
 use bytes::{Bytes, BytesMut};
 use futures::{SinkExt, StreamExt};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpListener;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, MutexGuard};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
 use messages::{service_ref_from_service_proxy, ClientMessage, ServerMessage, ServiceId};
-use service_collection::ServiceCollection;
+use service_collection::{RawBox, ServerEntry, ServiceCollection};
 use traits::ClientStreamSink;
 use util::{other_io_error, string_io_error};
 
@@ -34,7 +35,7 @@ use util::{other_io_error, string_io_error};
 ///
 /// To implement [RustyRpcServiceServer], use the `#[service_server_impl]`
 /// attribute in the `rusty_rpc_macro` crate.
-pub async fn start_server<T: RustyRpcServiceServer + Default>(
+pub async fn start_server<T: for<'a> RustyRpcServiceServer<'a> + Default>(
     listener: TcpListener,
 ) -> std::io::Result<()> {
     loop {
@@ -48,14 +49,15 @@ pub async fn start_server<T: RustyRpcServiceServer + Default>(
 }
 
 async fn handle_connection<
-    T: RustyRpcServiceServer + Default,
+    T: for<'a> RustyRpcServiceServer<'a> + Default,
     RW: AsyncRead + AsyncWrite + Unpin,
 >(
     service_collection: &mut ServiceCollection,
     read_write: RW,
 ) -> io::Result<()> {
     // Add initial service.
-    let initial_service_id = service_collection.register_service(Box::new(T::default()));
+    let initial_service_id =
+        unsafe { service_collection.register_service(Box::new(T::default()), None) };
     assert_eq!(initial_service_id.0, 0);
 
     // This implements Stream<Item=io::Result<BytesMut>> and Sink<Bytes>.
@@ -69,7 +71,7 @@ async fn handle_connection<
         let message_to_send: ServerMessage = match client_message {
             ClientMessage::DropService(service_id) => {
                 let service_arc = service_collection
-                    .remove_service_arc(service_id)
+                    .remove_service_entry_arc(service_id)
                     .ok_or_else(|| {
                         string_io_error(format!("Invalid service ID: {}", service_id.0))
                     })?;
@@ -82,18 +84,33 @@ async fn handle_connection<
                 ServerMessage::DropServiceDone
             }
             ClientMessage::CallMethod(service_id, method_id, method_args) => {
-                let service_arc =
-                    service_collection
-                        .get_service_arc(service_id)
-                        .ok_or_else(|| {
-                            string_io_error(format!("Invalid service ID: {}", service_id.0))
-                        })?;
-                let mut service_guard = service_arc
-                    .try_lock()
-                    .expect("Service somehow in use while trying to call a method on it.");
-                service_guard
-                    .parse_and_call_method_locally(method_id, method_args, service_collection)
-                    .await?
+                let service_entry_arc = service_collection
+                    .get_service_entry_arc(service_id)
+                    .ok_or_else(|| {
+                        string_io_error(format!("Invalid service ID: {}", service_id.0))
+                    })?;
+                // Leak since the parse_and_call_method_locally method should
+                // deallocate or store the guard.
+                let service_entry_guard =
+                    Box::leak(Box::new(service_entry_arc.try_lock().expect(
+                        "Service somehow in use while trying to call a method on it.",
+                    )));
+                let future = unsafe {
+                    let service_entry_raw = transmute::<
+                        &mut MutexGuard<'_, ServerEntry>,
+                        *mut MutexGuard<'static, ServerEntry>,
+                    >(service_entry_guard);
+                    let server = service_entry_guard.server();
+                    server.parse_and_call_method_locally(
+                        RawBox::new(service_entry_raw),
+                        method_id,
+                        method_args,
+                        service_collection,
+                    )
+                    // service_entry_raw goes out of scope before await,
+                    // so the returned future from this function is still Sync+Send.
+                };
+                future.await?
             }
         };
 
@@ -121,7 +138,8 @@ pub async fn start_client<
         .with(|out_message: ClientMessage| {
             futures::future::ready(io::Result::Ok(Bytes::from(out_message)))
         });
-    let wrapped: Arc<Mutex<dyn ClientStreamSink>> = Arc::new(Mutex::new(client_stream_sink));
+    let wrapped: Arc<Mutex<dyn ClientStreamSink + 'static>> =
+        Arc::new(Mutex::new(client_stream_sink));
     let proxy = T::ServiceProxy::from_service_id(initial_service_id, wrapped as _);
     service_ref_from_service_proxy(proxy)
 }

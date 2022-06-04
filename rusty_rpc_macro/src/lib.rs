@@ -5,7 +5,7 @@ use std::{env::current_dir, fs};
 
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
-use syn::{parse, parse_macro_input, parse_quote, FnArg, ItemImpl, LitStr};
+use syn::{parse, parse_macro_input, parse_quote, FnArg, ItemImpl, LitStr, Lifetime, GenericParam};
 
 use interface::{DataType, Identifier, ReturnType, Service, Struct};
 
@@ -56,6 +56,8 @@ pub fn interface_file(input: proc_macro::TokenStream) -> proc_macro::TokenStream
 
 /// Macro to be used on each service implementation. It will automatically call
 /// `#[async_trait]` for you.
+/// 
+/// If your struct has lifetime parameters, then give them to this macro. E.g., `#[service_server_impl('a, 'b, 'c)]`
 ///
 /// Example:
 /// ```ignore
@@ -85,32 +87,49 @@ pub fn service_server_impl(
         ),
     };
 
+    let input_generics = input.generics;
+    let lifetimes: Vec<&Lifetime> = input_generics.params.iter().filter_map(|generic_param| {
+        match generic_param {
+            GenericParam::Lifetime(x) => Some(&x.lifetime),
+            _ => None
+        } 
+    }).collect();
+    let (generics, trait_lifetime) = match &*lifetimes {
+        [] => (quote! { <'a> }, quote! { 'a }),
+        [lifetime] => (quote! { #input_generics }, quote! { #lifetime }),
+        _ => my_compile_error!("More than one lifetime parameter not supported for service_server_impl"),
+    };
+
     let internal = quote! { ::rusty_rpc_lib::internal_for_macro };
     quote! {
         #[#internal::async_trait]
         #original_input
 
-        impl #internal::RustyRpcServiceServerWithKnownClientType for #service_type_name {
-            type ClientType = dyn #service_trait_name;
+        impl #generics
+        #internal::RustyRpcServiceServerWithKnownClientType<#trait_lifetime, dyn #service_trait_name + #trait_lifetime>
+        for #service_type_name {
         }
         #[#internal::async_trait]
-        impl #internal::RustyRpcServiceServer for #service_type_name {
-            async fn parse_and_call_method_locally(
+        unsafe impl #generics
+        #internal::RustyRpcServiceServer<#trait_lifetime>
+        for #service_type_name {
+            async unsafe fn parse_and_call_method_locally(
                 &mut self,
+                self_guard: #internal::ServerGuard,
                 method_id: #internal::MethodId,
                 method_args: #internal::MethodArgs,
                 service_collection: &mut #internal::ServiceCollection,
             ) -> ::std::io::Result<#internal::ServerMessage> {
                 <#service_type_name as #service_trait_name>::_rusty_rpc_forward__parse_and_call_method_locally(
                     self,
+                    self_guard,
                     method_id,
                     method_args,
                     service_collection
                 ).await
             }
         }
-    }
-    .into()
+    }.into()
 }
 
 fn code_for_struct(struct_name: &Identifier, struct_: &Struct) -> TokenStream {
@@ -140,6 +159,7 @@ fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream
     let internal = quote! { ::rusty_rpc_lib::internal_for_macro };
     let service_name = to_syn_ident(service_name);
     let service_proxy_name = format_ident!("{}_RustyRpcServiceProxy", service_name);
+    let lifetime: Lifetime = parse_quote! { 'a };
 
     let method_headers: Vec<TokenStream> = service
         .methods
@@ -155,11 +175,11 @@ fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream
                     parse_quote! { #param_name: #param_type }
                 })
                 .collect();
-            let return_type = return_type_to_token_stream(&method_type.return_type);
+            let return_type = return_type_to_token_stream(&method_type.return_type, lifetime.clone());
 
             // Without the semicolon or {}
             quote! {
-                async fn #method_name(&mut self, #(#non_self_params),*) -> #return_type
+                async fn #method_name<#lifetime>(&#lifetime mut self, #(#non_self_params),*) -> #return_type
             }
         })
         .collect();
@@ -254,12 +274,20 @@ fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream
                         {
                             let local_service = #internal::local_service_from_service_ref(return_value)
                                 .expect("Server somehow returned a remote ServiceRefMut.");
-                            let service_id = service_collection.register_service(local_service as ::std::boxed::Box<_>);
+                            let service_id = unsafe {
+                                service_collection.register_service(
+                                    local_service as ::std::boxed::Box<_>,
+                                    Some(self_guard)
+                                )
+                            };
                             #internal::ReturnValue::Service(service_id)
                         }
                     },
                     ReturnType::Data(_) => quote! {
                         {
+                            unsafe {
+                                ::std::mem::drop(::std::boxed::Box::from_raw(self_guard.get()));
+                            }
                             #internal::ReturnValue::Data(
                                 #internal::rmp_serde::to_vec(&return_value)
                                     .expect("Serializing return value somehow failed.")
@@ -290,6 +318,7 @@ fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream
             #[doc(hidden)]
             async fn _rusty_rpc_forward__parse_and_call_method_locally(
                 &mut self,
+                self_guard: #internal::ServerGuard,
                 method_id: #internal::MethodId,
                 method_args: #internal::MethodArgs,
                 service_collection: &mut #internal::ServiceCollection,
@@ -380,12 +409,12 @@ fn data_type_to_token_stream(type_: &DataType) -> TokenStream {
     }
 }
 
-fn return_type_to_token_stream(type_: &ReturnType) -> TokenStream {
+fn return_type_to_token_stream(type_: &ReturnType, lifetime: Lifetime) -> TokenStream {
     let inner_return_type = match type_ {
         ReturnType::ServiceRefMut(x) => {
             let internal = quote! { ::rusty_rpc_lib::internal_for_macro };
             let temp = to_syn_ident(x);
-            quote! { #internal::ServiceRefMut<dyn #temp> }
+            quote! { #internal::ServiceRefMut<dyn #temp + #lifetime> }
         }
         ReturnType::Data(x) => data_type_to_token_stream(x),
     };

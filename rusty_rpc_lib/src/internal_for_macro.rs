@@ -7,7 +7,7 @@ pub use crate::messages::{
     local_service_from_service_ref, service_ref_from_service_proxy, ClientMessage, MethodArgs,
     MethodId, ReturnValue, ServerMessage, ServiceId, ServiceRefMut,
 };
-pub use crate::service_collection::ServiceCollection;
+pub use crate::service_collection::{RawBox, ServerEntry, ServerGuard, ServiceCollection};
 pub use crate::traits::{
     ClientStreamSink, RustyRpcServiceClient, RustyRpcServiceProxy, RustyRpcServiceServer,
     RustyRpcServiceServerWithKnownClientType, RustyRpcStruct,

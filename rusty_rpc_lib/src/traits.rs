@@ -8,6 +8,7 @@ use serde::Serialize;
 use tokio::sync::Mutex;
 
 use crate::messages::{ClientMessage, MethodArgs, MethodId, ServerMessage, ServiceId};
+use crate::service_collection::ServerGuard;
 use crate::ServiceCollection;
 
 /// For any given service trait `MyService` which came from the
@@ -15,9 +16,6 @@ use crate::ServiceCollection;
 /// MyService` (unsized naked dyn trait) implements [RustyRpcServiceClient].
 ///
 /// Users should not manually implement this trait.
-///
-/// For some reason the Send + Sync + 'static bound is needed for
-/// `tokio::spawn`.
 pub trait RustyRpcServiceClient {
     /// A proxy that client uses to reference such a service. This proxy type
     /// will implement the service trait (e.g. MyService).
@@ -61,25 +59,27 @@ impl<
 /// Used for type safety in the `new()` method of [crate::messages::ServiceRefMut].
 /// Like [RustyRpcServiceServer], it is also automatically implemented for user
 /// types.
-pub trait RustyRpcServiceServerWithKnownClientType: RustyRpcServiceServer {
-    #[doc(hidden)]
-    type ClientType: RustyRpcServiceClient + ?Sized;
+pub trait RustyRpcServiceServerWithKnownClientType<'a, T: RustyRpcServiceClient + ?Sized + 'a>:
+    RustyRpcServiceServer<'a>
+{
 }
 
 /// This trait will be automatically implemented by any user type marked with
 /// the `#[service_server_impl]` attribute in the `rusty_rpc_macro` crate. Users
 /// should not manually implement this trait.
 ///
-/// Client-side access to services (via [RustyRpcServiceClient::ServiceRefMut]) CANNOT
+/// Client-side access to services (via [crate::messages::ServiceRefMut]) CANNOT
 /// use this trait.
 ///
 /// For some reason the Send + Sync + 'static bound is needed for
 /// `tokio::spawn`.
 #[async_trait]
-pub trait RustyRpcServiceServer: Send + Sync + 'static {
+pub unsafe trait RustyRpcServiceServer<'a>: Send + Sync + 'a {
+    /// self_guard is allocated with box. It won't be deallocated by caller.
     #[doc(hidden)]
-    async fn parse_and_call_method_locally(
+    async unsafe fn parse_and_call_method_locally(
         &mut self,
+        self_guard: ServerGuard,
         method_id: MethodId,
         method_args: MethodArgs,
         service_collection: &mut ServiceCollection,

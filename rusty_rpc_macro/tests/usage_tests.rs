@@ -26,7 +26,7 @@ async fn test_types() {
             async fn bar2(&mut self, _a: i32, _b: Foo) -> io::Result<Foo> {
                 unimplemented!()
             }
-            async fn baz(&mut self) -> io::Result<ServiceRefMut<dyn MyService>> {
+            async fn baz<'a>(&'a mut self) -> io::Result<ServiceRefMut<dyn MyService + 'a>> {
                 Ok(ServiceRefMut::new(DummyService))
             }
         }
@@ -39,8 +39,8 @@ async fn test_types() {
         fn need_rpc_struct(_: impl rusty_rpc_lib::internal_for_macro::RustyRpcStruct) {}
         need_rpc_struct(foo.clone());
 
-        fn need_rpc_service_server(
-            _: impl rusty_rpc_lib::internal_for_macro::RustyRpcServiceServer,
+        fn need_rpc_service_server<'a>(
+            _: impl rusty_rpc_lib::internal_for_macro::RustyRpcServiceServer<'a>,
         ) {
         }
         need_rpc_service_server(service);
@@ -80,7 +80,7 @@ async fn simple_usage() {
                 y: Bar { z: val },
             })
         }
-        async fn baz(&mut self) -> io::Result<ServiceRefMut<dyn MyService>> {
+        async fn baz<'a>(&'a mut self) -> io::Result<ServiceRefMut<dyn MyService + 'a>> {
             Ok(ServiceRefMut::new(ConstService(9999)))
         }
     }
@@ -135,6 +135,7 @@ async fn simple_usage() {
         let baz_foo_output = baz_output_service.foo().await.unwrap();
         assert_eq!(9999, baz_foo_output);
         baz_output_service.close().await.unwrap();
+        drop(baz_output_service);
 
         service.close().await.unwrap();
     });
@@ -145,4 +146,26 @@ async fn simple_usage() {
         .await
         .expect_err("Server somehow terminated on its own without crashing.");
     assert!(server_error.is_cancelled(), "Server crashed.");
+}
+
+#[tokio::test]
+async fn mut_borrow_test() {
+    struct ParentServer(i32);
+    struct ChildServer<'a>(&'a mut ParentServer);
+    #[service_server_impl]
+    impl ParentService for ParentServer {
+        async fn get_child(&mut self) -> io::Result<ServiceRefMut<dyn ChildService>> {
+            Ok(ServiceRefMut::new(ChildServer(self)))
+        }
+    }
+    #[service_server_impl]
+    impl<'a> ChildService for ChildServer<'a> {
+        async fn get_value(&mut self) -> io::Result<i32> {
+            Ok(self.0 .0)
+        }
+        async fn set_value(&mut self, new_value: i32) -> io::Result<i32> {
+            self.0 .0 = new_value;
+            Ok(new_value)
+        }
+    }
 }

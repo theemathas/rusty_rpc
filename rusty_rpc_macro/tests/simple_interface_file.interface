@@ -9,7 +9,16 @@ struct Bar {
 
 service MyService {
     foo(&mut self) -> i32;
-    bar(&mut self, arg: i32) -> i32 ;
-    bar2(&mut self, arg1: i32, arg2: Foo) -> Foo ;
-    baz(&mut self) -> &mut service MyService ;
+    bar(&mut self, arg: i32) -> i32;
+    bar2(&mut self, arg1: i32, arg2: Foo) -> Foo;
+    baz(&mut self) -> &mut service MyService;
+}
+
+service ParentService {
+    get_child(&mut self) -> &mut service ChildService;
+}
+
+service ChildService {
+    get_value(&mut self) -> i32;
+    set_value(&mut self, new_value: i32) -> i32;
 }
