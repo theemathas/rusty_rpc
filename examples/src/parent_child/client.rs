@@ -23,12 +23,12 @@ async fn main() {
 
     assert_eq!(456, parent_service.get().await.unwrap());
 
-    let mut child_service_2 = parent_service.child().await.unwrap();
-    child_service_2.set(789).await.unwrap();
-    child_service_2.close().await.unwrap();
-    drop(child_service_2);
-    // Compilation will fail if the above line is omitted.
-    // Compilation will also fail if child_service_2 is used after this line.
+    // This is equivalent with the way we used child_service_1.
+    {
+        let mut child_service_2 = parent_service.child().await.unwrap();
+        child_service_2.set(789).await.unwrap();
+        child_service_2.close().await.unwrap();
+    }
 
     assert_eq!(789, parent_service.get().await.unwrap());
 
