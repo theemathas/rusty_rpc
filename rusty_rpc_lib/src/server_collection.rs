@@ -53,13 +53,13 @@ impl Drop for ServerEntry {
 }
 
 /// State for one ongoing connection with one client.
-pub struct ServiceCollection {
+pub struct ServerCollection {
     active_services: Mutex<HashMap<ServiceId, Arc<Mutex<ServerEntry>>>>,
     next_service_id: AtomicU64,
 }
-impl ServiceCollection {
+impl ServerCollection {
     pub(crate) fn new() -> Self {
-        ServiceCollection {
+        ServerCollection {
             active_services: Mutex::new(HashMap::new()),
             next_service_id: AtomicU64::new(0),
         }

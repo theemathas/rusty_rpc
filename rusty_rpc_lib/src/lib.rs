@@ -7,7 +7,7 @@ pub use traits::{
 };
 
 mod messages;
-mod service_collection;
+mod server_collection;
 mod traits;
 mod util;
 
@@ -23,7 +23,7 @@ use tokio::sync::{Mutex, MutexGuard};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
 use messages::{service_ref_from_service_proxy, ClientMessage, ServerMessage, ServiceId};
-use service_collection::{RawBox, ServerEntry, ServiceCollection};
+use server_collection::{RawBox, ServerCollection, ServerEntry};
 use traits::ClientStreamSink;
 use util::{other_io_error, string_io_error};
 
@@ -41,7 +41,7 @@ pub async fn start_server<T: for<'a> RustyRpcServiceServer<'a> + Default>(
     loop {
         let (socket, _) = listener.accept().await?;
         tokio::spawn(async move {
-            if let Err(e) = handle_connection::<T, _>(&mut ServiceCollection::new(), socket).await {
+            if let Err(e) = handle_connection::<T, _>(&mut ServerCollection::new(), socket).await {
                 eprintln!("Connection handler terminated due to error: {}", e);
             };
         });
@@ -52,7 +52,7 @@ async fn handle_connection<
     T: for<'a> RustyRpcServiceServer<'a> + Default,
     RW: AsyncRead + AsyncWrite + Unpin,
 >(
-    service_collection: &mut ServiceCollection,
+    service_collection: &mut ServerCollection,
     read_write: RW,
 ) -> io::Result<()> {
     // Add initial service.

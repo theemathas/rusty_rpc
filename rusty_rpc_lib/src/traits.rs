@@ -8,8 +8,8 @@ use serde::Serialize;
 use tokio::sync::Mutex;
 
 use crate::messages::{ClientMessage, MethodArgs, MethodId, ServerMessage, ServiceId};
-use crate::service_collection::ServerGuard;
-use crate::ServiceCollection;
+use crate::server_collection::ServerGuard;
+use crate::ServerCollection;
 
 /// For any given service trait `MyService` which came from the
 /// `interface_file!` macro in the `rusty_rpc_macro` crate, the type `dyn
@@ -82,7 +82,7 @@ pub unsafe trait RustyRpcServiceServer<'a>: Send + Sync + 'a {
         self_guard: ServerGuard,
         method_id: MethodId,
         method_args: MethodArgs,
-        service_collection: &mut ServiceCollection,
+        service_collection: &mut ServerCollection,
     ) -> io::Result<ServerMessage>;
 }
 

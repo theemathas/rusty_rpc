@@ -118,7 +118,7 @@ pub fn service_server_impl(
                 self_guard: #internal::ServerGuard,
                 method_id: #internal::MethodId,
                 method_args: #internal::MethodArgs,
-                service_collection: &mut #internal::ServiceCollection,
+                service_collection: &mut #internal::ServerCollection,
             ) -> ::std::io::Result<#internal::ServerMessage> {
                 <#service_type_name as #service_trait_name>::_rusty_rpc_forward__parse_and_call_method_locally(
                     self,
@@ -321,7 +321,7 @@ fn code_for_service(service_name: &Identifier, service: &Service) -> TokenStream
                 self_guard: #internal::ServerGuard,
                 method_id: #internal::MethodId,
                 method_args: #internal::MethodArgs,
-                service_collection: &mut #internal::ServiceCollection,
+                service_collection: &mut #internal::ServerCollection,
             ) -> ::std::io::Result<#internal::ServerMessage> {
                 #(#parse_and_call_method_locally_impl_branches)*
                 {
