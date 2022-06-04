@@ -44,7 +44,7 @@ use nom::{
     IResult, Parser,
 };
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::{btree_map::Entry, BTreeMap},
     iter::once,
 };
 
@@ -64,8 +64,8 @@ pub fn parse_interface(input: &[u8]) -> IResult<&[u8], RpcInterface> {
 
     fn definitions_to_interface(definitions: Vec<Definition>) -> Result<RpcInterface, String> {
         let mut output = RpcInterface {
-            structs: HashMap::new(),
-            services: HashMap::new(),
+            structs: BTreeMap::new(),
+            services: BTreeMap::new(),
         };
         for definition in definitions {
             // Insert the definition in to the appropriate struct in `output`.
@@ -111,7 +111,7 @@ fn parse_struct(input: &[u8]) -> IResult<&[u8], (Identifier, Struct)> {
             tag("}"),
         )),
         |(_, _, struct_name, _, _, field_vec, _)| -> _ {
-            let mut field_map = HashMap::<Identifier, DataType>::new();
+            let mut field_map = BTreeMap::<Identifier, DataType>::new();
             for (field_name, field_type) in field_vec {
                 match field_map.entry(field_name) {
                     Entry::Vacant(entry) => entry.insert(field_type),
@@ -154,7 +154,7 @@ fn parse_service(input: &[u8]) -> IResult<&[u8], (Identifier, Service)> {
             tag("}"),
         )),
         |(_, _, service_name, _, _, method_vec, _)| -> _ {
-            let mut method_map = HashMap::<Identifier, Method>::new();
+            let mut method_map = BTreeMap::<Identifier, Method>::new();
             for (method_name, method_type) in method_vec {
                 match method_map.entry(method_name) {
                     Entry::Vacant(entry) => entry.insert(method_type),
@@ -292,19 +292,19 @@ mod tests {
         let ident = |s: &str| Identifier(s.to_string());
         let foo_ident = || ident("Foo");
         let expected = RpcInterface {
-            structs: HashMap::from([(
+            structs: BTreeMap::from([(
                 foo_ident(),
                 Struct {
-                    fields: HashMap::from([
+                    fields: BTreeMap::from([
                         (ident("x"), DataType::I32),
                         (ident("y"), DataType::Struct(foo_ident())),
                     ]),
                 },
             )]),
-            services: HashMap::from([(
+            services: BTreeMap::from([(
                 ident("MyService"),
                 Service {
-                    methods: HashMap::from([
+                    methods: BTreeMap::from([
                         (
                             ident("foo"),
                             Method {
