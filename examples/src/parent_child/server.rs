@@ -18,7 +18,7 @@ struct ChildServer<'a>(&'a mut i32);
 
 #[service_server_impl]
 impl ParentService for ParentServer {
-    async fn child<'a>(&'a mut self) -> io::Result<ServiceRefMut<dyn ChildService + 'a>> {
+    async fn child(&mut self) -> io::Result<ServiceRefMut<dyn ChildService>> {
         Ok(ServiceRefMut::new(ChildServer(&mut self.0)))
     }
     async fn get(&mut self) -> io::Result<i32> {
