@@ -4,7 +4,7 @@ Class project for the CS244b "Distributed System" class at Stanford during the S
 
 An RPC implemented for the Rust programming language and designed to better use Rust's unique features.
 
-TODO: Write some more stuff here.
+The paper can be seen [here](paper/project.pdf).
 
 For usage examples, see the `examples` directory. I recommend looking in the order: `hello_world`, then `parent_child`, then `tree`.
 

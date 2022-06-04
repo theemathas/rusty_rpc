@@ -1,0 +1,304 @@
+\documentclass[11pt, twocolumn]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[utf8]{inputenc}
+\usepackage{hyperref}
+\usepackage{cleveref}
+\usepackage{minted}
+\usepackage{biblatex}
+
+\addbibresource{citations.bib}
+
+\title{%
+    RPC Resource Management and Remote Objects with Rust \\
+    \Large Class Project for CS 244b \\
+    Spring 2022 quarter, Stanford
+}
+\author{Tim Chirananthavat \\ (NetID: timch)}
+\date{June 2022}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+    Resource management (e.g., deallocating unused memory) is difficult, even in a program on a single machine. When it comes to distributed settings using RPCs, existing RPC protocols do not provide much help, and require programmers to manually and explicitly manage resources. Rust has language features that make resource management more manageable while allowing explicit control by the programmer. We present an RPC system\footnote{Code can be found at \url{https://github.com/theemathas/rusty_rpc}} that leverages Rust's features to allow for pointers that reference remote objects, similarly to network object systems, and deallocating said remote objects exactly when they're finished being used.
+\end{abstract}
+
+\section{Background}
+
+The Cap'n Proto RPC protocol\cite{capnproto}, unlike other popular RPC protocols, is capable of sending opaque objects over the networks, effectively resulting in a remote object system or distributed object system. However, it is unclear from the documentation how memory management is done in Cap'n Proto. Manual memory management seems unwieldy, so the other two options are either leaking all unused memory until the connection is closed, which is bad for long-running connections, or some sort of distributed garbage collection algorithm is run, which is probably inefficent.
+
+Rust provides an alternative. Rust uses compile-time checks to automatically determine exactly at which point in the code an object should be deallocated, while ensuring that each object is deallocated exactly once. This gives us the efficiency of manual memory management, but some of the convenience and all of the safety and security of garbage collection.
+
+We use Rust's unique features to implement an RPC system which has remote objects (called \textit{services} in our system), while properly deallocating unused objects.
+
+\section{Design}
+
+\subsection{Usage}
+
+In this section, we'll examine how our RPC system could be used.
+
+In our current design, the RPC system is used between two parties, the server and the client. The server creates a TCP listener, and waits for the client to connect to it. The client can then make RPC calls to the server, and ends the interaction by closing the TCP connection. The server stores one set of state data per client connection, with each set of state data being separate from each other.
+
+I will use the term \textit{server} to either mean one of the two communicating parties, or mean the concrete implementation on the server side of a certain service instance.
+
+\subsubsection{Basic usage}
+
+Like most if not all RPC systems, the user of our system needs to write a file specifying what RPC calls are allowed. We'll call this file a \textit{protocol file}. An example of a simple protocol file can be found at \cref{lst:hello_world:protocol}.
+
+\begin{listing}
+\begin{minted}{text}
+struct Foo {
+    x: i32,
+    y: Bar,
+}
+struct Bar {
+    z: i32,
+}
+service MyService {
+    foo(&mut self) -> i32;
+    bar(&mut self, arg: i32) -> i32;
+    baz(&mut self, arg1: i32, arg2: Foo)
+        -> Foo;
+}
+\end{minted}
+\caption{File \texttt{hello\_world.protocol}}
+\label{lst:hello_world:protocol}
+\end{listing}
+
+The user defines \texttt{struct} data types. Currently, the supported types of fields are \texttt{i32} (Rust's 32-bit integer type), and other structs. The user also defines \texttt{service}s. These are translated into Rust traits. If a Rust object implement that trait, then other code can call the methods.
+
+A protocol file is translated into generated Rust glue code and user-facing Rust types and traits. The user-facing portion of the translation for \texttt{hello\_world.protocol} can be found at \cref{lst:hello_world:translation}. The \texttt{\#[async\_trait]} attribute (from an external library\cite{async-trait}) is used to allow async functions being used in traits, which Rust does not currently support natively yet. The return types are wrapped in \texttt{io::Result}, signalling that the function might result in an I/O error, since this trait might be called from the client side. The \texttt{Send + Sync} trait bounds is required for usage with the \texttt{tokio}\cite{tokio} async runtime.
+
+\begin{listing}
+\begin{minted}{rust}
+use std::io;
+use async_trait::async_trait;
+#[async_trait]
+pub trait MyService: Send + Sync {
+  async fn bar(&mut self, arg: i32)
+    -> io::Result<i32>;
+  async fn baz(&mut self, arg1: i32,
+    arg2: Foo) -> io::Result<Foo>;
+  async fn foo(&mut self)
+    -> io::Result<i32>;
+}
+\end{minted}
+\caption{User-facing portion of the translation of \texttt{hello\_world.protocol}}
+\label{lst:hello_world:translation}
+\end{listing}
+
+Client code using this protocol file can be seen at \cref{lst:hello_world:client}. It uses the \texttt{interface\_file!} macro to load the interface file. It uses the \texttt{await} keyword to asynchronously wait for the calls to finish, and it uses the \texttt{.unwrap()} method to (poorly) handle I/O errors by crashing. In the \texttt{start\_client} function call, the client needs to specify that it expects the server to (initially) provide the \texttt{MyService} service. For the \texttt{.close()} method calls, see \cref{sec:ext:async-drop}. Note that the client can call the \texttt{service} like any other method, as though the service was running locally.
+
+\begin{listing}
+\begin{minted}{rust}
+use tokio::net::TcpStream;
+use rusty_rpc_lib::start_client;
+use rusty_rpc_macro::interface_file;
+
+interface_file!(
+    "path/to/hello_world.protocol"
+);
+
+#[tokio::main]
+async fn main() {
+  let stream =
+    TcpStream::connect("127.0.0.1:8080")
+      .await.unwrap();
+  let mut service = start_client::
+        <dyn MyService, _>(stream).await;
+    let foo_result = service.foo().await
+        .unwrap();
+    assert_eq!(123, foo_result);
+    service.close().await.unwrap();
+}
+\end{minted}
+\caption{Client-side code using \texttt{hello\_world.protocol}}
+\label{lst:hello_world:client}
+\end{listing}
+
+Server code using this protocol file can be seen at \cref{lst:hello_world:server}. It shares some similarities with the client code, so we will describe only the differences here. The code defines \texttt{MyServiceServer} to be a concrete type implementing the abstract \texttt{MyService} interface. The implementation is marked with the \texttt{\#[service\_server\_impl]} attribute, which is a macro that generates the necessary glue code. The \texttt{MyServiceServer} type can contain data necessary for the server, but in this case it does not. To call \texttt{start\_server} for a type, that type has to implement the \texttt{Default} trait, which means that our RPC system can create more values of the \texttt{MyServiceServer} type on demand, one per each client.
+
+\begin{listing}
+\begin{minted}{rust}
+use std::io;
+use tokio::net::TcpListener;
+use rusty_rpc_lib::start_server;
+use rusty_rpc_macro::{interface_file,
+  service_server_impl};
+
+interface_file!(
+  "path/to/hello_world.protocol"
+);
+
+#[derive(Default)]
+struct MyServiceServer;
+#[service_server_impl]
+impl MyService for MyServiceServer {
+  async fn foo(&mut self)
+  -> io::Result<i32> {
+    Ok(123)
+  }
+  // Other methods omitted.
+}
+
+#[tokio::main]
+async fn main() {
+  let listener =
+  TcpListener::bind("127.0.0.1:8080")
+    .await.unwrap();
+  start_server::<MyServiceServer>(
+    listener).await.unwrap();
+}
+
+\end{minted}
+\caption{Server-side code using \texttt{hello\_world.protocol}}
+\label{lst:hello_world:server}
+\end{listing}
+
+\subsection{Returning service references.}
+
+Our RPC system has a unique feature, inspired by Cap'n Proto\cite{capnproto}, where a service can spawn child services (which might even be other instances of that same parent service). A parent service must wait for the child service to be \textit{dropped} (terminated) before the parent service can be dropped. Furthermore, while the child service has not been closed yet, the parent service cannot be used (but see \cref{sec:ext:shared-refs}). This is enforced both at runtime (using dynamic checks, see \cref{sec:impl:returning-services}) and compile time (using Rust's features, see \cref{sec:impl:types}).
+
+To define a method that returns service references, the following syntax is used in the protocol file:
+\mint{text}|child(&mut self) -> &mut service ChildService;|
+\noindent The server code and the client code for using service references can be seen in \cref{lst:returning-services:server,lst:returning-services:client}, respectively.
+
+Note that now the return type of the method has a \texttt{ServiceRefMut<...>}. This type is a proxy type. On the server side, it's just a no-op wrapper around a server. However, on the client side, it holds a \texttt{\&mut dyn ChildService} (a reference to a \textit{trait object} in Rust) and when used as a \texttt{ChildService}, will send the method calls over the network.
+
+In the server code, the child server is given a reference to the parent server. That is, the child server is borrowing data from the parent server. This means that until it is dropped, the child server has \textit{borrowed} exclusive access to the parent server's data (unless a grandchild is spawned, in which case the chain of borrowing of access rights continues).
+
+Note that in the client code, the child services must be dropped before the parent service can be used again. In Rust, an object can be manually dropped (as in \texttt{child\_service\_1}), or it can be automatically dropped when it goes out of scope (as in \texttt{child\_service\_2}). In either case, Rust keeps track of when objects are dropped, in order to maintain the invariants mentioned at the beginning of this section.
+
+Again, for the \texttt{.close()} method calls, see \cref{sec:ext:async-drop}.
+
+\begin{listing}
+\begin{minted}{rust}
+async fn child(&mut self) ->
+io::Result<ServiceRefMut<
+dyn ChildService>> {
+  Ok(ServiceRefMut::new(
+    ChildServer::new(self)
+  ))
+}
+\end{minted}
+\caption{Server-side code for returning services.}
+\label{lst:returning-services:server}
+\end{listing}
+
+\begin{listing}
+\begin{minted}{rust}
+let mut parent_service = ...;
+
+let mut child_service_1 =
+  parent_service.child()
+  .await.unwrap();
+child_service_1.do_something()
+  .await.unwrap();
+drop(child_service_1);
+/* Compilation will fail if
+the above line is omitted.
+Compilation will also fail if
+child_service_1 is used after
+this line. */
+
+// Equivalent to above.
+{
+  let mut child_service_2 =
+    parent_service.child()
+    .await.unwrap();
+  child_service_2.do_something()
+    .await.unwrap();
+  child_service_2.close()
+    .await.unwrap();
+}
+
+parent_service.close()
+  .await.unwrap();
+\end{minted}
+\caption{Client-side code for returning services.}
+\label{lst:returning-services:client}
+\end{listing}
+
+\subsection{Implementation}
+
+In this section, we'll examine how our RPC system was implemented.
+
+The RPC system is implemented in two parts. One part is a normal library, and the other is a \textit{procedural macro}, which is a Rust feature which allows code to generate code. Our RPC system has two procedural macros: \texttt{interface\_file!(...)} and \texttt{\#[service\_server\_impl]}. These two macros generate the glue code necessary for the RPC system to function.
+
+The server and the client both uses the tokio\cite{tokio} runtime to run asynchronously. The server, once it gets a connection from the client, sends and receives a series of messages. The messages are delimited by a header specifying how large each message is, and each message is serialized using the MessagePack\cite{msgpack} format.
+
+When the client makes an RPC call, it sends a message containing a service ID, a method ID, and the serialized arguments. The server then finds the specified service instance, runs the RPC call to completion, and sends a message back to the client containing the return value. RPC calls are processed in sequence serially (but see \cref{sec:ext:concurrency}).
+
+\subsubsection{Service references} \label{sec:impl:returning-services}
+
+Each service instance is assigned a 64-bit service ID. The initial service is assumed by both parties to have ID zero. When a subsequent service is spawned, the next service ID is incremented and assigned to this service. On overflow, the ID wraps around and keeps being incremented until an unused ID is found.
+
+In Rust, a \textit{mutex guard} (written as \texttt{MutexGuard} in code) is a type or a value of that type, representing the rights to access the data behind a locked mutex. Creting a mutex guard requires locking that mutex. When a mutex guard is dropped (deallocated), the mutex is unlocked.
+
+The server side maintains a \textit{server collection}, which is a hash map, mapping from service IDs to servers. Each server in the server collection is guarded by a mutex. Each server in this collection (except the initial server) is associated and stored with a mutex guard representing access rights to that server's parent. As a result, as long as the child server has not been dropped, nobody else can access the parent server, and the parent server also cannot be dropped.
+
+When a server creates and returns a \texttt{ServiceRefMut} object, the RPC system considers that to be a newly created server, and assigns it a new service ID. This service ID is then sent across the network and stored in the client-side \texttt{ServiceRefMut} object which has a service proxy inside. This object will then transmit back this service ID when a method is called on this service. Once the \texttt{.close()} method is called on a service proxy, the client transmits a request to the server to drop the service, and then waits for the server to respond with a confirmation before proceeding.
+
+A method in a service that returns a service reference is translated to a Rust method such as below:
+\begin{minted}{rust}
+async fn child(&mut self) ->
+  ServiceRefMut<dyn ChildService>
+\end{minted}
+\noindent which is equivalent to below (due to \textit{lifetime elision})
+\begin{minted}{rust}
+async fn child<'a>(&'a mut self) ->
+  ServiceRefMut<'a, dyn ChildService + 'a>
+\end{minted}
+\noindent Rust is then able to connect the return value with the \texttt{self} argument via the \texttt{'a} lifetime, meaning that the return value might contain references to data in \texttt{self}.
+
+\subsubsection{Traits and code generation} \label{sec:impl:types}
+
+The following traits are used in order to bridge the gap (in a type-safe way) between the RPC library and the code generated by the procedural macro:
+\begin{itemize}
+    \item \texttt{RustyRpcStruct}: This trait is implemented by the \texttt{interface\_file!()} macro for all structs. The type \texttt{i32} also implements this trait. That is, this trait is implemented all arguments and all return values except for return values that are service references.
+    
+    Types implementing this trait can be serialized and deserialized.
+    
+    \item \texttt{RustyRpcServiceClient}: This trait is implemented by the \texttt{interface\_file!()} macro for the trait object corresponding to the service trait. For example, in \ref{lst:hello_world:protocol}, the type \texttt{dyn MyService} (which is the dynamic-dispatch version of the \texttt{MyService} trait) implements \texttt{RustyRpcServiceClient}.
+    
+    Types implementing this trait has a corresponding proxy type that implements \texttt{RustyRpcServiceProxy}, and is therefore legible for being in a \texttt{ServiceRefMut}, e.g. \texttt{ServiceRefMut<dyn MyService>}.
+    
+    \item \texttt{RustyRpcServiceProxy}: This trait is implemented by the \texttt{interface\_file!()} macro for a newly generated type. For example, in \ref{lst:hello_world:protocol}, a type named \texttt{MyService\_RustyRpcServiceProxy} is generated which implements this trait.
+    
+    Types implementing this trait can be constructed from a service Id.
+    
+    \item \texttt{RustyRpcServiceServer}: This trait is implemented by the \texttt{\#[service\_server\_impl]} macro for server types. For example, in \ref{lst:hello_world:server}, the type \texttt{MyServiceServer} implements this trait. The way this is implemented is that it calls a method added to the (for example) \texttt{MyService} trait by the \texttt{interface\_file!()} macro.
+    
+    Types implementing this trait can be stored in a server collection. In order for this to work, types implementing this trait can be given a method ID and a bunch of opaque bytes representing the arguments.
+    
+    Types implementing this trait can also be used as the initial service in the \texttt{start\_server()} method.
+    
+    \item \texttt{RustyRpcServiceServerWithKnownClient\linebreak[0]Type}: This trait is implemented alongside the \texttt{RustyRpcServiceServer} trait. The difference is that, as the name suggests, this trait contains type-level information on what the corresponding service trait is being implemented. For example, in \ref{lst:hello_world:server}, the type \texttt{MyServiceServer} implements \texttt{RustyRpcServiceServerWithKnownClient\linebreak[0]Type\linebreak[0]<'a, dyn MyService>} for all lifetimes \texttt{'a}.
+\end{itemize}
+
+The above traits should not be manually implemented by the users of the RPC system.
+
+\section{Possible future extensions}
+
+There are some possible extensions that were envisioned in designed, but were not actually implemented due to time constraints. They are discussed here.
+
+\subsection{Shared references} \label{sec:ext:shared-refs}
+
+Unfortunately, with the current design, only one service can be in use at a time. This is enforced at runtime by a mutex and at compile time by a chain of \texttt{\&mut T} references, which are exclusives. It is possible to extend the syntax to allow not only \texttt{\&mut T} references to services, but also \texttt{\&T} references, which are nonexclusive shared references. Such references have behavior mirroring a read-lock in a readers-writer lock, and can be enforced at runtime by such a mechanism instead of a mutex.
+
+\subsection{Independent (non-borrowed) services} \label{sec:ext:independent-services}
+
+In \cref{sec:impl:returning-services}, we see that a child service always borrows from a parent service. Therefore, the parent service cannot be used while the child service is active (unless the \cref{sec:ext:shared-refs} is used). It might be sometimes desirable to spawn a child that is completely independent from the parent, so both services can be active concurrently.
+
+\subsection{Concurrency and multiple clients} \label{sec:ext:concurrency}
+
+Once \cref{sec:ext:shared-refs} or \cref{sec:ext:independent-services} is implemented, there can now be multiple active services at the same time. We could then allow for multiple concurrent RPC calls at the same time. This would require adding an RPC call number to each request from the client, and to each response from the server. Once we have this set up, it should be relatively easy to allow for multiple clients to share access to the same server state.
+
+\subsection{Async drop} \label{sec:ext:async-drop}
+
+In the current design, the \texttt{.close()} method (see \cref{sec:impl:returning-services}) on a service proxy causes the corresponding server-side object to be dropped. The original design did not have this method, but merely dropping the service proxy would be sufficient. This would require the destructor (a.k.a. drop implementation) to run async code, which is currently impossible in Rust. There appears to be a plan\cite{async-drop} to make this ``async drop'' feature possible, but it is unclear.
+
+\printbibliography
+
+\end{document}
